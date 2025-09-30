@@ -1,0 +1,5 @@
+{
+  "rule_string": "lt(ARG0, max(ARG0, id_int(20)))",
+  "fitness": 3162215.0998693174,
+  "ticker": "ABX.TO"
+}
