@@ -18,10 +18,10 @@ import numpy as np
 import pandas as pd
 from deap import creator, base, gp
 
-from gp_quant.data.loader import load_and_process_data
+from gp_quant.data.loader import load_and_process_data, split_train_test_data
 from gp_quant.evolution.engine import run_evolution
 from gp_quant.gp.operators import pset, NumVector
-from gp_quant.backtesting.engine import BacktestingEngine
+from gp_quant.backtesting.engine import BacktestingEngine, PortfolioBacktestingEngine
 
 def setup_deap_creator():
     """Initializes DEAP's creator with Fitness and Individual types."""
@@ -46,9 +46,101 @@ def fix_loaded_individual(individual, price_vec, volume_vec):
     # But for now, let's try a different approach - use the BacktestingEngine method
     return individual
 
+def run_portfolio_evolution(args, data_dir):
+    """Runs portfolio evolution across multiple tickers with train/test split."""
+    print("=" * 80)
+    print("--- Starting GP Quant PORTFOLIO Evolution ---")
+    print("=" * 80)
+    print(f"Tickers: {args.tickers}")
+    print(f"Generations: {args.generations}, Population: {args.population}")
+    print(f"Mode: Portfolio (multi-ticker)")
+    
+    # Load all data
+    all_stock_data = load_and_process_data(data_dir, args.tickers)
+    
+    # Check if all tickers loaded successfully
+    missing_tickers = set(args.tickers) - set(all_stock_data.keys())
+    if missing_tickers:
+        print(f"ERROR: Missing data for tickers: {missing_tickers}")
+        return
+    
+    # Split into train/test based on PRD short training period
+    train_start = '1993-07-02'
+    train_end = '1999-06-25'
+    test_start = '1999-06-28'
+    test_end = '2000-06-30'
+    
+    print(f"\n--- Data Split Configuration ---")
+    print(f"Training Period: {train_start} to {train_end}")
+    print(f"Testing Period: {test_start} to {test_end}")
+    
+    train_data, test_data = split_train_test_data(
+        all_stock_data, train_start, train_end, test_start, test_end
+    )
+    
+    # Run evolution on training data
+    print(f"\n{'='*80}")
+    print("--- Running Evolution on TRAINING Data ---")
+    print(f"{'='*80}")
+    
+    pop, log, hof = run_evolution(
+        data=train_data,  # Pass dictionary for portfolio mode
+        n_generations=args.generations,
+        population_size=args.population
+    )
+    
+    best_individual = hof[0]
+    
+    # Evaluate on training data
+    print(f"\n{'='*80}")
+    print("--- TRAINING Results ---")
+    print(f"{'='*80}")
+    print(f"Best Individual Fitness (Total Excess Return): ${best_individual.fitness.values[0]:,.2f}")
+    print(f"Best Evolved Trading Rule:")
+    print(best_individual)
+    
+    train_backtester = PortfolioBacktestingEngine(train_data)
+    train_results = train_backtester.run_detailed_simulation(best_individual)
+    
+    print(f"\n--- Training Portfolio Summary ---")
+    summary = train_results['portfolio_summary']
+    print(f"Total GP Return: ${summary['total_gp_return']:,.2f}")
+    print(f"Total Buy-and-Hold Return: ${summary['total_bh_return']:,.2f}")
+    print(f"Total Excess Return: ${summary['total_excess_return']:,.2f}")
+    print(f"\nPer-Ticker Results:")
+    for ticker, result in train_results['tickers'].items():
+        print(f"  {ticker}: GP=${result['gp_return']:,.2f}, B&H=${result['buy_and_hold_return']:,.2f}, "
+              f"Excess=${result['gp_return'] - result['buy_and_hold_return']:,.2f}")
+    
+    # Evaluate on testing data (out-of-sample)
+    print(f"\n{'='*80}")
+    print("--- TESTING Results (Out-of-Sample) ---")
+    print(f"{'='*80}")
+    
+    test_backtester = PortfolioBacktestingEngine(test_data)
+    test_results = test_backtester.run_detailed_simulation(best_individual)
+    
+    print(f"\n--- Testing Portfolio Summary ---")
+    test_summary = test_results['portfolio_summary']
+    print(f"Total GP Return: ${test_summary['total_gp_return']:,.2f}")
+    print(f"Total Buy-and-Hold Return: ${test_summary['total_bh_return']:,.2f}")
+    print(f"Total Excess Return: ${test_summary['total_excess_return']:,.2f}")
+    print(f"\nPer-Ticker Results:")
+    for ticker, result in test_results['tickers'].items():
+        print(f"  {ticker}: GP=${result['gp_return']:,.2f}, B&H=${result['buy_and_hold_return']:,.2f}, "
+              f"Excess=${result['gp_return'] - result['buy_and_hold_return']:,.2f}")
+    
+    # Save results
+    save_portfolio_results(best_individual, train_results, test_results, args.tickers)
+    
+    print(f"\n{'='*80}")
+    print("Portfolio Evolution Complete!")
+    print(f"{'='*80}")
+
+
 def run_evolution_for_tickers(args, data_dir):
-    """Runs the evolution process for the specified tickers."""
-    print("--- Starting GP Quant Evolution ---")
+    """Runs the evolution process for the specified tickers (SINGLE TICKER MODE)."""
+    print("--- Starting GP Quant Evolution (Single Ticker Mode) ---")
     print(f"Tickers: {args.tickers}, Generations: {args.generations}, Population: {args.population}")
 
     all_stock_data = load_and_process_data(data_dir, args.tickers)
@@ -212,7 +304,70 @@ def load_and_show_signals(args, data_dir):
         if signal_changes == 0:
             print("No signal changes detected.")
     else:
-        print("Could not generate signals.")
+        print(f"Could not generate signals.")
+
+
+def save_portfolio_results(individual, train_results, test_results, tickers):
+    """Save portfolio evolution results to files."""
+    import json
+    
+    # Create a unique identifier for this portfolio run
+    ticker_str = "_".join(tickers)
+    
+    # Save the rule and summary
+    save_path = f"portfolio_{ticker_str}_results.json"
+    
+    results_data = {
+        'rule_string': str(individual),
+        'tickers': tickers,
+        'training': {
+            'total_gp_return': train_results['portfolio_summary']['total_gp_return'],
+            'total_bh_return': train_results['portfolio_summary']['total_bh_return'],
+            'total_excess_return': train_results['portfolio_summary']['total_excess_return'],
+            'per_ticker': {}
+        },
+        'testing': {
+            'total_gp_return': test_results['portfolio_summary']['total_gp_return'],
+            'total_bh_return': test_results['portfolio_summary']['total_bh_return'],
+            'total_excess_return': test_results['portfolio_summary']['total_excess_return'],
+            'per_ticker': {}
+        }
+    }
+    
+    # Add per-ticker results
+    for ticker in tickers:
+        train_ticker = train_results['tickers'][ticker]
+        test_ticker = test_results['tickers'][ticker]
+        
+        results_data['training']['per_ticker'][ticker] = {
+            'gp_return': train_ticker['gp_return'],
+            'bh_return': train_ticker['buy_and_hold_return'],
+            'excess_return': train_ticker['gp_return'] - train_ticker['buy_and_hold_return'],
+            'num_trades': len(train_ticker['trades'])
+        }
+        
+        results_data['testing']['per_ticker'][ticker] = {
+            'gp_return': test_ticker['gp_return'],
+            'bh_return': test_ticker['buy_and_hold_return'],
+            'excess_return': test_ticker['gp_return'] - test_ticker['buy_and_hold_return'],
+            'num_trades': len(test_ticker['trades'])
+        }
+        
+        # Save individual ticker trade details
+        train_trades_df = pd.DataFrame(train_ticker['trades'])
+        if not train_trades_df.empty:
+            train_trades_df.to_csv(f"portfolio_train_{ticker}_trades.csv", index=False)
+        
+        test_trades_df = pd.DataFrame(test_ticker['trades'])
+        if not test_trades_df.empty:
+            test_trades_df.to_csv(f"portfolio_test_{ticker}_trades.csv", index=False)
+    
+    with open(save_path, 'w') as f:
+        json.dump(results_data, f, indent=2)
+    
+    print(f"\nPortfolio results saved to {save_path}")
+    print(f"Trade details saved for each ticker (train and test)")
+
 
 def main():
     """Main execution function."""
@@ -223,6 +378,8 @@ def main():
     
     parser.add_argument("--generations", type=int, default=50, help="Number of generations to run.")
     parser.add_argument("--population", type=int, default=500, help="Population size.")
+    parser.add_argument("--mode", type=str, choices=['single', 'portfolio'], default='portfolio',
+                        help="Evolution mode: 'single' for individual tickers, 'portfolio' for multi-ticker portfolio")
     args = parser.parse_args()
 
     # --- 1. Setup Environment ---
@@ -231,7 +388,12 @@ def main():
     data_dir = os.path.join(project_root, 'TSE300_selected')
 
     if args.tickers:
-        run_evolution_for_tickers(args, data_dir)
+        if args.mode == 'portfolio':
+            # Portfolio mode: evolve one strategy for one or multiple tickers with train/test split
+            run_portfolio_evolution(args, data_dir)
+        else:
+            # Single ticker mode: evolve separate strategies for each ticker (no train/test split)
+            run_evolution_for_tickers(args, data_dir)
     elif args.load_best:
         load_and_show_signals(args, data_dir)
 

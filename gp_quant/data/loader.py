@@ -6,7 +6,7 @@ cleaning it, and preparing it for use in the genetic programming
 and backtesting engines.
 """
 import pandas as pd
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import os
 
 def load_and_process_data(data_dir: str, tickers: List[str]) -> Dict[str, pd.DataFrame]:
@@ -56,3 +56,47 @@ def load_and_process_data(data_dir: str, tickers: List[str]) -> Dict[str, pd.Dat
         print(f"Successfully loaded and processed data for {ticker}.")
 
     return data
+
+
+def split_train_test_data(
+    data: Dict[str, pd.DataFrame],
+    train_start: str,
+    train_end: str,
+    test_start: str,
+    test_end: str
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
+    """
+    Splits data into training (in-sample) and testing (out-of-sample) periods.
+    
+    Based on PRD Section 7.2 (Long Training Period):
+    - Training Initial Period: 1992-06-30 to 1993-07-02 (250 days)
+    - Training Period: 1993-07-02 to 1999-06-25 (1498 days)
+    - Testing Initial Period: 1998-07-07 to 1999-06-25 (250 days)
+    - Testing Period: 1999-06-28 to 2000-06-30 (256 days)
+    
+    Args:
+        data: Dictionary of ticker -> DataFrame
+        train_start: Training period start date (e.g., '1992-06-30')
+        train_end: Training period end date (e.g., '1999-06-25')
+        test_start: Testing period start date (e.g., '1999-06-28')
+        test_end: Testing period end date (e.g., '2000-06-30')
+    
+    Returns:
+        Tuple of (train_data, test_data) dictionaries
+    """
+    train_data = {}
+    test_data = {}
+    
+    for ticker, df in data.items():
+        # Split training data
+        train_df = df.loc[train_start:train_end].copy()
+        train_data[ticker] = train_df
+        
+        # Split testing data
+        test_df = df.loc[test_start:test_end].copy()
+        test_data[ticker] = test_df
+        
+        print(f"{ticker} - Train: {len(train_df)} days ({train_df.index[0].date()} to {train_df.index[-1].date()})")
+        print(f"{ticker} - Test: {len(test_df)} days ({test_df.index[0].date()} to {test_df.index[-1].date()})")
+    
+    return train_data, test_data

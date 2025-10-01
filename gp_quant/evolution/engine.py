@@ -8,10 +8,12 @@ including a custom selection mechanism as specified in the project requirements.
 import random
 import operator
 import numpy as np
+import pandas as pd
+from typing import Dict, Union
 from tqdm import trange, tqdm
 from deap import base, creator, tools, gp
 
-from gp_quant.backtesting.engine import BacktestingEngine
+from gp_quant.backtesting.engine import BacktestingEngine, PortfolioBacktestingEngine
 from gp_quant.gp.operators import pset
 
 
@@ -65,7 +67,9 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     Configures and runs the main evolutionary algorithm.
 
     Args:
-        data: The historical stock data (Pandas DataFrame).
+        data: The historical stock data. Can be either:
+              - A single Pandas DataFrame (for single ticker evolution)
+              - A Dict[str, DataFrame] (for portfolio evolution)
         population_size: The number of individuals in the population.
         n_generations: The number of generations to run.
         crossover_prob: The probability of crossover.
@@ -76,7 +80,16 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     """
     # --- Setup DEAP Toolbox ---
     toolbox = base.Toolbox()
-    backtester = BacktestingEngine(data)
+    
+    # Determine if we're doing single ticker or portfolio evolution
+    if isinstance(data, dict):
+        # Portfolio mode: multiple tickers
+        backtester = PortfolioBacktestingEngine(data)
+        print(f"Running PORTFOLIO evolution with {len(data)} tickers")
+    else:
+        # Single ticker mode (backward compatibility)
+        backtester = BacktestingEngine(data)
+        print(f"Running SINGLE TICKER evolution")
 
     # Attribute generator
     toolbox.register("expr", gp.genHalfAndHalf, pset=pset, min_=2, max_=6)

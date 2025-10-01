@@ -1,5 +1,0 @@
-{
-  "rule_string": "logical_not(gt(vol(mul(min(ROC(ARG1, 100), id_int(20)), max(add(ARG0, ARG1), id_int(10))), id_int(50)), avg(div(RSI(RSI(ARG0, 50), id_int(50)), lag(sub(ARG0, ARG0), id_int(50))), id_int(id_int(id_int(50))))))",
-  "fitness": 1598765.9010696048,
-  "ticker": "RY.TO"
-}

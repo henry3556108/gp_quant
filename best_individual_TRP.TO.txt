@@ -1,5 +1,0 @@
-{
-  "rule_string": "lt(sub(RSI(vol(ARG1, 50), id_int(50)), mul(avg(max(ARG0, 100), 10), max(ARG0, 100))), ROC(RSI(vol(ARG0, 20), id_int(10)), id_int(id_int(10))))",
-  "fitness": 800208.7922703754,
-  "ticker": "TRP.TO"
-}

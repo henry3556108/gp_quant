@@ -48,7 +48,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-.md
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
@@ -205,9 +205,16 @@ logs/
 # Documentation (可選)
 # ============================================================================
 
-# 如果不想提交某些文檔的草稿
-# *_draft.md
-# *_WIP.md
+# Ignore all markdown files except specific ones
+*.md
+
+# But keep these important documentation files
+!README.md
+!PRD.md
+!ONBOARDING.md
+!DEAP_implementation_guide.md
+!BACKTEST_REFACTOR_DESIGN.md
+!EXPERIMENTS_README.md
 
 # 如果使用 LaTeX 生成 PDF
 # *.aux
@@ -261,12 +268,6 @@ wandb/
 
 # 確保這些重要文件被追蹤
 !requirements.txt
-!README.md
-!PRD.md
-!ONBOARDING.md
-!DEAP_implementation_guide.md
-!BACKTEST_REFACTOR_DESIGN.md
-!EXPERIMENTS_README.md
 
 # Keep source code
 !gp_quant/**/*.py

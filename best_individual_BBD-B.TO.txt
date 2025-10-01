@@ -1,5 +1,0 @@
-{
-  "rule_string": "lt(lag(ROC(max(ARG0, 100), id_int(69)), 100), ROC(ARG0, 20))",
-  "fitness": 3655371.273738939,
-  "ticker": "BBD-B.TO"
-}

@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 import numba
 from deap import gp
-from typing import Callable
+from typing import Callable, Dict, List
 
 from gp_quant.gp.operators import pset, NumVector
 
@@ -298,4 +298,100 @@ class BacktestingEngine:
         except Exception as e:
             print(f"Error getting signals from individual: {e}")
             return np.array([], dtype=bool)
+
+
+class PortfolioBacktestingEngine:
+    """
+    A class to simulate a portfolio trading strategy across multiple tickers.
+    
+    This engine evaluates a single GP individual on multiple stocks simultaneously,
+    with equal capital allocation to each ticker. The fitness is the sum of excess
+    returns across all tickers.
+    """
+    
+    def __init__(self, data_dict: Dict[str, pd.DataFrame], total_capital: float = 100000.0):
+        """
+        Initializes the portfolio backtesting engine.
+        
+        Args:
+            data_dict: Dictionary mapping ticker symbols to their DataFrames
+            total_capital: Total initial capital to be split equally among tickers
+        """
+        self.data_dict = data_dict
+        self.total_capital = total_capital
+        self.tickers = list(data_dict.keys())
+        self.n_tickers = len(self.tickers)
+        
+        # Equal weight allocation
+        self.capital_per_ticker = total_capital / self.n_tickers
+        
+        # Create a BacktestingEngine for each ticker
+        self.engines = {}
+        for ticker, data in data_dict.items():
+            self.engines[ticker] = BacktestingEngine(data, self.capital_per_ticker)
+        
+        print(f"Portfolio initialized with {self.n_tickers} tickers")
+        print(f"Capital per ticker: ${self.capital_per_ticker:,.2f}")
+    
+    def evaluate(self, individual: gp.PrimitiveTree) -> tuple[float]:
+        """
+        Evaluates the fitness of a GP individual across all tickers in the portfolio.
+        
+        The fitness is calculated as the sum of excess returns from all tickers:
+        fitness = sum(excess_return_ticker_i for all tickers)
+        
+        Args:
+            individual: A GP tree representing the trading rule
+            
+        Returns:
+            A tuple containing the portfolio fitness (total excess return)
+        """
+        total_excess_return = 0.0
+        ticker_results = {}
+        
+        for ticker in self.tickers:
+            # Evaluate the individual on this ticker
+            engine = self.engines[ticker]
+            excess_return = engine.evaluate(individual)[0]
+            
+            ticker_results[ticker] = excess_return
+            total_excess_return += excess_return
+        
+        # Optional: Print detailed results for debugging
+        # print(f"Portfolio evaluation: {ticker_results}, Total: {total_excess_return:.2f}")
+        
+        return total_excess_return,
+    
+    def run_detailed_simulation(self, individual: gp.PrimitiveTree) -> Dict:
+        """
+        Runs detailed simulation for all tickers and returns comprehensive results.
+        
+        Returns:
+            Dictionary containing results for each ticker and portfolio summary
+        """
+        results = {
+            'tickers': {},
+            'portfolio_summary': {}
+        }
+        
+        total_gp_return = 0.0
+        total_bh_return = 0.0
+        
+        for ticker in self.tickers:
+            engine = self.engines[ticker]
+            ticker_result = engine.run_detailed_simulation(individual)
+            
+            results['tickers'][ticker] = ticker_result
+            total_gp_return += ticker_result['gp_return']
+            total_bh_return += ticker_result['buy_and_hold_return']
+        
+        results['portfolio_summary'] = {
+            'total_gp_return': total_gp_return,
+            'total_bh_return': total_bh_return,
+            'total_excess_return': total_gp_return - total_bh_return,
+            'capital_per_ticker': self.capital_per_ticker,
+            'total_capital': self.total_capital
+        }
+        
+        return results
 
