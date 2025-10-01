@@ -1,0 +1,302 @@
+# ============================================================================
+# Python
+# ============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.md
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ============================================================================
+# IDE / Editor
+# ============================================================================
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================================================
+# Operating System
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================================================
+# Project Specific - Experiment Results
+# ============================================================================
+
+# Experiment output files (可以選擇性保留部分結果)
+experiments_results/
+all_experiments_results.csv
+all_experiments_results.json
+experiments_summary.json
+
+# Individual experiment logs
+experiment_*.log
+*_run*_output.log
+
+# Trade CSV files (generated during experiments)
+portfolio_train_*.csv
+portfolio_test_*.csv
+*_trades.csv
+
+# Portfolio results JSON
+portfolio_*.json
+
+# Best individual files (serialized GP individuals)
+best_individual_*.dill
+best_individual_*.txt
+best_individual_*.pkl
+
+# Trade details
+trade_details_*.csv
+
+# ============================================================================
+# Project Specific - Data Files (根據需求調整)
+# ============================================================================
+
+# 如果數據文件很大或包含敏感信息，取消註釋以下行
+# TSE300_selected/*.csv
+
+# 如果要保留原始數據但忽略處理後的數據
+# processed_data/
+# cleaned_data/
+
+# ============================================================================
+# Project Specific - Temporary Files
+# ============================================================================
+
+# Temporary analysis files
+temp/
+tmp/
+scratch/
+
+# Backup files
+*.bak
+*.backup
+*_backup.*
+*_old.*
+
+# Log files
+*.log
+logs/
+
+# ============================================================================
+# Documentation (可選)
+# ============================================================================
+
+# 如果不想提交某些文檔的草稿
+# *_draft.md
+# *_WIP.md
+
+# 如果使用 LaTeX 生成 PDF
+# *.aux
+# *.out
+# *.toc
+# *.pdf
+
+# ============================================================================
+# Data Analysis / Visualization
+# ============================================================================
+
+# Plots and figures (如果是自動生成的)
+plots/
+figures/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# 但保留文檔中的圖片
+!docs/**/*.png
+!docs/**/*.jpg
+!README_assets/*.png
+
+# Excel files (如果是臨時分析文件)
+*.xlsx
+*.xls
+
+# ============================================================================
+# Machine Learning / AI Specific
+# ============================================================================
+
+# Model checkpoints
+checkpoints/
+*.ckpt
+*.h5
+*.pth
+*.pt
+
+# TensorBoard logs
+runs/
+tensorboard/
+
+# Weights & Biases
+wandb/
+
+# ============================================================================
+# Keep These Files (明確保留)
+# ============================================================================
+
+# 確保這些重要文件被追蹤
+!requirements.txt
+!README.md
+!PRD.md
+!ONBOARDING.md
+!DEAP_implementation_guide.md
+!BACKTEST_REFACTOR_DESIGN.md
+!EXPERIMENTS_README.md
+
+# Keep source code
+!gp_quant/**/*.py
+!tests/**/*.py
+!main.py
+!run_*.py
+!plot_*.py
+
+# Keep sample data (如果有小樣本用於測試)
+!samples/**/*
+
+# ============================================================================
+# Notes
+# ============================================================================
+
+# 使用建議：
+# 1. 實驗結果文件（CSV, JSON）通常不應提交，因為：
+#    - 文件很大
+#    - 可以重新生成
+#    - 會導致 repo 膨脹
+#
+# 2. 如果需要保留某些關鍵實驗結果，可以：
+#    - 創建 results_archive/ 資料夾
+#    - 選擇性地 git add -f 特定文件
+#    - 或使用 Git LFS 管理大文件
+#
+# 3. 數據文件（TSE300_selected/*.csv）的處理：
+#    - 如果是公開數據且不大，可以提交
+#    - 如果是私有數據或很大，應該忽略
+#    - 可以在 README 中說明如何獲取數據
+#
+# 4. 定期清理：
+#    git clean -fdx  # 刪除所有未追蹤的文件（小心使用！）
