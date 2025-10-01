@@ -215,6 +215,7 @@ logs/
 !DEAP_implementation_guide.md
 !BACKTEST_REFACTOR_DESIGN.md
 !EXPERIMENTS_README.md
+!REFACTOR_SUMMARY.md
 
 # 如果使用 LaTeX 生成 PDF
 # *.aux
