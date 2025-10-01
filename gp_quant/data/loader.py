@@ -60,43 +60,83 @@ def load_and_process_data(data_dir: str, tickers: List[str]) -> Dict[str, pd.Dat
 
 def split_train_test_data(
     data: Dict[str, pd.DataFrame],
-    train_start: str,
-    train_end: str,
-    test_start: str,
-    test_end: str
-) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
+    train_data_start: str,
+    train_backtest_start: str,
+    train_backtest_end: str,
+    test_data_start: str,
+    test_backtest_start: str,
+    test_backtest_end: str
+) -> Tuple[Dict[str, Dict], Dict[str, Dict]]:
     """
-    Splits data into training (in-sample) and testing (out-of-sample) periods.
+    Splits data into training (in-sample) and testing (out-of-sample) periods
+    with separate initial periods for technical indicator calculation.
     
-    Based on PRD Section 7.2 (Long Training Period):
-    - Training Initial Period: 1992-06-30 to 1993-07-02 (250 days)
-    - Training Period: 1993-07-02 to 1999-06-25 (1498 days)
-    - Testing Initial Period: 1998-07-07 to 1999-06-25 (250 days)
-    - Testing Period: 1999-06-28 to 2000-06-30 (256 days)
+    Based on PRD Section 7, each phase has two periods:
+    1. Initial Period: Used only for calculating technical indicators (warm-up period)
+    2. Backtest Period: Used for both technical indicators AND return calculation
+    
+    Example (Short Training Period):
+    - Training Initial Period: 1997-06-25 to 1998-06-22 (250 days) → indicator calculation only
+    - Training Period: 1998-06-22 to 1999-06-25 (256 days) → indicators + returns
+    - Testing Initial Period: 1998-07-07 to 1999-06-28 (250 days) → indicator calculation only
+    - Testing Period: 1999-06-28 to 2000-06-30 (256 days) → indicators + returns
     
     Args:
         data: Dictionary of ticker -> DataFrame
-        train_start: Training period start date (e.g., '1992-06-30')
-        train_end: Training period end date (e.g., '1999-06-25')
-        test_start: Testing period start date (e.g., '1999-06-28')
-        test_end: Testing period end date (e.g., '2000-06-30')
+        train_data_start: Training initial period start (e.g., '1997-06-25')
+        train_backtest_start: Training backtest period start (e.g., '1998-06-22')
+        train_backtest_end: Training backtest period end (e.g., '1999-06-25')
+        test_data_start: Testing initial period start (e.g., '1998-07-07')
+        test_backtest_start: Testing backtest period start (e.g., '1999-06-28')
+        test_backtest_end: Testing backtest period end (e.g., '2000-06-30')
     
     Returns:
-        Tuple of (train_data, test_data) dictionaries
+        Tuple of (train_data, test_data) dictionaries where each value is a dict with:
+        - 'data': DataFrame with full data (including initial period)
+        - 'backtest_start': Start date for return calculation
+        - 'backtest_end': End date for return calculation
     """
     train_data = {}
     test_data = {}
     
     for ticker, df in data.items():
-        # Split training data
-        train_df = df.loc[train_start:train_end].copy()
-        train_data[ticker] = train_df
+        # Check if data covers the required periods
+        data_start_date = df.index[0]
+        data_end_date = df.index[-1]
         
-        # Split testing data
-        test_df = df.loc[test_start:test_end].copy()
-        test_data[ticker] = test_df
+        # Training data: from data_start to backtest_end (includes initial period)
+        # Use the later of train_data_start or actual data start
+        actual_train_start = max(pd.Timestamp(train_data_start), data_start_date)
+        train_df = df.loc[actual_train_start:train_backtest_end].copy()
         
-        print(f"{ticker} - Train: {len(train_df)} days ({train_df.index[0].date()} to {train_df.index[-1].date()})")
-        print(f"{ticker} - Test: {len(test_df)} days ({test_df.index[0].date()} to {test_df.index[-1].date()})")
+        train_data[ticker] = {
+            'data': train_df,
+            'backtest_start': train_backtest_start,
+            'backtest_end': train_backtest_end
+        }
+        
+        # Testing data: from data_start to backtest_end (includes initial period)
+        actual_test_start = max(pd.Timestamp(test_data_start), data_start_date)
+        test_df = df.loc[actual_test_start:test_backtest_end].copy()
+        
+        test_data[ticker] = {
+            'data': test_df,
+            'backtest_start': test_backtest_start,
+            'backtest_end': test_backtest_end
+        }
+        
+        # Calculate period lengths
+        train_initial_days = len(df.loc[actual_train_start:train_backtest_start]) - 1
+        train_backtest_days = len(df.loc[train_backtest_start:train_backtest_end])
+        test_initial_days = len(df.loc[actual_test_start:test_backtest_start]) - 1
+        test_backtest_days = len(df.loc[test_backtest_start:test_backtest_end])
+        
+        print(f"{ticker} - Train: {len(train_df)} days total")
+        print(f"  Data available from: {data_start_date.date()}")
+        print(f"  Initial period: {train_initial_days} days ({actual_train_start.date()} to {train_backtest_start})")
+        print(f"  Backtest period: {train_backtest_days} days ({train_backtest_start} to {train_backtest_end})")
+        print(f"{ticker} - Test: {len(test_df)} days total")
+        print(f"  Initial period: {test_initial_days} days ({actual_test_start.date()} to {test_backtest_start})")
+        print(f"  Backtest period: {test_backtest_days} days ({test_backtest_start} to {test_backtest_end})")
     
     return train_data, test_data

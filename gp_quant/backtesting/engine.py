@@ -50,16 +50,46 @@ class BacktestingEngine:
     A class to simulate a trading strategy and evaluate its fitness.
     """
 
-    def __init__(self, data: pd.DataFrame, initial_capital: float = 100000.0):
+    def __init__(self, data: pd.DataFrame, initial_capital: float = 100000.0,
+                 backtest_start: str = None, backtest_end: str = None):
         """
         Initializes the backtesting engine.
 
         Args:
-            data: A DataFrame with historical market data (OHLCV).
+            data: A DataFrame with historical market data (OHLCV). Should include
+                  initial period for technical indicator calculation.
             initial_capital: The starting capital for the simulation.
+            backtest_start: Start date for return calculation (optional).
+                           If None, uses entire data period.
+            backtest_end: End date for return calculation (optional).
+                         If None, uses entire data period.
         """
         self.data = data
         self.initial_capital = initial_capital
+        self.backtest_start = backtest_start
+        self.backtest_end = backtest_end
+        
+        # Determine the backtest data range
+        if self.backtest_start or self.backtest_end:
+            # Adjust backtest_start if it's before data starts
+            actual_backtest_start = self.backtest_start
+            if self.backtest_start and pd.Timestamp(self.backtest_start) < self.data.index[0]:
+                actual_backtest_start = self.data.index[0].strftime('%Y-%m-%d')
+                print(f"  Warning: backtest_start ({self.backtest_start}) is before data start ({self.data.index[0].date()})")
+                print(f"  Using actual data start: {actual_backtest_start}")
+                self.backtest_start = actual_backtest_start
+            
+            # Create mask for backtest period
+            mask = pd.Series(True, index=self.data.index)
+            if self.backtest_start:
+                mask &= (self.data.index >= self.backtest_start)
+            if self.backtest_end:
+                mask &= (self.data.index <= self.backtest_end)
+            self.backtest_data = self.data[mask]
+        else:
+            # Use entire data for backward compatibility
+            self.backtest_data = self.data
+        
         # Create a copy of pset to avoid modifying the global one
         import copy
         self.pset = copy.deepcopy(pset)
@@ -119,12 +149,24 @@ class BacktestingEngine:
         signals = signals.astype(np.bool_)
 
         # --- Run Simulation with the pre-calculated signal vector ---
-        gp_return = self._run_vectorized_simulation(signals)
+        # Only use signals from backtest period
+        if self.backtest_start or self.backtest_end:
+            # Get the mask for backtest period
+            mask = pd.Series(False, index=self.data.index)
+            if self.backtest_start:
+                mask |= (self.data.index >= self.backtest_start)
+            if self.backtest_end:
+                mask &= (self.data.index <= self.backtest_end)
+            backtest_signals = signals[mask.values]
+        else:
+            backtest_signals = signals
+        
+        gp_return = self._run_vectorized_simulation(backtest_signals, self.backtest_data)
 
         # --- Calculate Buy-and-Hold Return ---
-        # Correctly calculate B&H return based on initial capital
-        start_price = self.data['Close'].iloc[0]
-        end_price = self.data['Close'].iloc[-1]
+        # Calculate B&H return only for backtest period
+        start_price = self.backtest_data['Close'].iloc[0]
+        end_price = self.backtest_data['Close'].iloc[-1]
         if start_price > 0:
             buy_and_hold_return = (end_price / start_price - 1) * self.initial_capital
         else:
@@ -149,17 +191,24 @@ class BacktestingEngine:
         
         return excess_return,
 
-    def _run_vectorized_simulation(self, signals: np.ndarray) -> float:
+    def _run_vectorized_simulation(self, signals: np.ndarray, data: pd.DataFrame = None) -> float:
         """
         Runs the simulation using the fast Numba JIT-compiled loop.
+        
+        Args:
+            signals: Boolean array of trading signals
+            data: DataFrame to use for simulation. If None, uses self.data
         """
+        if data is None:
+            data = self.data
+            
         # Ensure signals is always an array to prevent Numba typing errors
         if not hasattr(signals, '__len__'):
             # If signal is a single boolean, broadcast it to the shape of the data
-            signals = np.full(self.data.shape[0], signals, dtype=np.bool_)
+            signals = np.full(data.shape[0], signals, dtype=np.bool_)
 
-        open_prices_np = self.data['Open'].to_numpy()
-        close_prices_np = self.data['Close'].to_numpy()
+        open_prices_np = data['Open'].to_numpy()
+        close_prices_np = data['Close'].to_numpy()
 
         # The first call to a JIT function is slow due to compilation.
         # Subsequent calls are fast.
@@ -186,6 +235,7 @@ class BacktestingEngine:
     def run_detailed_simulation(self, individual: gp.PrimitiveTree) -> dict:
         """
         Runs a full simulation and returns detailed trade logs and performance metrics.
+        Only records trades within the backtest period.
         """
         signals = self.get_signals(individual)
         if len(signals) == 0:
@@ -196,6 +246,20 @@ class BacktestingEngine:
                 'error': 'Could not generate signals from individual.'
             }
 
+        # Use backtest_data for simulation
+        data_to_use = self.backtest_data
+        
+        # Get signals for backtest period only
+        if self.backtest_start or self.backtest_end:
+            mask = pd.Series(False, index=self.data.index)
+            if self.backtest_start:
+                mask |= (self.data.index >= self.backtest_start)
+            if self.backtest_end:
+                mask &= (self.data.index <= self.backtest_end)
+            backtest_signals = signals[mask.values]
+        else:
+            backtest_signals = signals
+
         trades = []
         position = 0
         capital = self.initial_capital
@@ -203,11 +267,11 @@ class BacktestingEngine:
         entry_price = 0.0
         entry_date = None
 
-        open_prices = self.data['Open'].to_numpy()
-        dates = self.data.index
+        open_prices = data_to_use['Open'].to_numpy()
+        dates = data_to_use.index
 
-        for i in range(len(signals) - 1):
-            signal = signals[i]
+        for i in range(len(backtest_signals) - 1):
+            signal = backtest_signals[i]
             next_day_open_price = open_prices[i + 1]
 
             if position == 0 and signal == True and capital > 0:
@@ -232,12 +296,12 @@ class BacktestingEngine:
                 position = 0
 
         if position == 1:
-            last_close_price = self.data['Close'].iloc[-1]
+            last_close_price = data_to_use['Close'].iloc[-1]
             capital = shares * last_close_price
             pnl = (last_close_price - entry_price) * shares
             trades.append({
                 'entry_date': entry_date.strftime('%Y-%m-%d'),
-                'exit_date': self.data.index[-1].strftime('%Y-%m-%d'),
+                'exit_date': data_to_use.index[-1].strftime('%Y-%m-%d'),
                 'entry_price': round(entry_price, 2),
                 'exit_price': round(last_close_price, 2),
                 'shares': round(shares, 2),
@@ -246,8 +310,9 @@ class BacktestingEngine:
 
         gp_total_return = capital - self.initial_capital
 
-        start_price = self.data['Close'].iloc[0]
-        end_price = self.data['Close'].iloc[-1]
+        # Calculate B&H for backtest period
+        start_price = data_to_use['Close'].iloc[0]
+        end_price = data_to_use['Close'].iloc[-1]
         buy_and_hold_return = (end_price / start_price - 1) * self.initial_capital if start_price > 0 else 0
 
         return {
@@ -309,18 +374,22 @@ class PortfolioBacktestingEngine:
     returns across all tickers.
     """
     
-    def __init__(self, data_dict: Dict[str, pd.DataFrame], total_capital: float = 100000.0):
+    def __init__(self, data_dict: Dict[str, pd.DataFrame], total_capital: float = 100000.0,
+                 backtest_config: Dict[str, Dict] = None):
         """
         Initializes the portfolio backtesting engine.
         
         Args:
             data_dict: Dictionary mapping ticker symbols to their DataFrames
             total_capital: Total initial capital to be split equally among tickers
+            backtest_config: Optional dictionary mapping ticker to backtest configuration:
+                            {ticker: {'backtest_start': str, 'backtest_end': str}}
         """
         self.data_dict = data_dict
         self.total_capital = total_capital
         self.tickers = list(data_dict.keys())
         self.n_tickers = len(self.tickers)
+        self.backtest_config = backtest_config or {}
         
         # Equal weight allocation
         self.capital_per_ticker = total_capital / self.n_tickers
@@ -328,7 +397,17 @@ class PortfolioBacktestingEngine:
         # Create a BacktestingEngine for each ticker
         self.engines = {}
         for ticker, data in data_dict.items():
-            self.engines[ticker] = BacktestingEngine(data, self.capital_per_ticker)
+            # Get backtest configuration for this ticker
+            config = self.backtest_config.get(ticker, {})
+            backtest_start = config.get('backtest_start', None)
+            backtest_end = config.get('backtest_end', None)
+            
+            self.engines[ticker] = BacktestingEngine(
+                data, 
+                self.capital_per_ticker,
+                backtest_start=backtest_start,
+                backtest_end=backtest_end
+            )
         
         print(f"Portfolio initialized with {self.n_tickers} tickers")
         print(f"Capital per ticker: ${self.capital_per_ticker:,.2f}")

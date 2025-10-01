@@ -9,30 +9,43 @@ from datetime import datetime
 import pandas as pd
 import os
 
-def modify_main_py(train_start, train_end, test_start, test_end):
-    """Modify main.py with new date ranges"""
+def modify_main_py(train_data_start, train_backtest_start, train_backtest_end,
+                   test_data_start, test_backtest_start, test_backtest_end):
+    """Modify main.py with new date ranges including initial periods"""
     with open('main.py', 'r') as f:
         content = f.read()
     
-    # Replace the date strings
+    # Replace the date strings for training
     content = re.sub(
-        r"train_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"train_start = '{train_start}'",
+        r"train_data_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
+        f"train_data_start = '{train_data_start}'",
         content
     )
     content = re.sub(
-        r"train_end = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"train_end = '{train_end}'",
+        r"train_backtest_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
+        f"train_backtest_start = '{train_backtest_start}'",
         content
     )
     content = re.sub(
-        r"test_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"test_start = '{test_start}'",
+        r"train_backtest_end = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
+        f"train_backtest_end = '{train_backtest_end}'",
+        content
+    )
+    
+    # Replace the date strings for testing
+    content = re.sub(
+        r"test_data_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
+        f"test_data_start = '{test_data_start}'",
         content
     )
     content = re.sub(
-        r"test_end = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"test_end = '{test_end}'",
+        r"test_backtest_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
+        f"test_backtest_start = '{test_backtest_start}'",
+        content
+    )
+    content = re.sub(
+        r"test_backtest_end = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
+        f"test_backtest_end = '{test_backtest_end}'",
         content
     )
     
@@ -79,7 +92,10 @@ def extract_results(output):
     
     return results
 
-def run_single_experiment(ticker, period_name, train_start, train_end, test_start, test_end, run_number):
+def run_single_experiment(ticker, period_name, 
+                         train_data_start, train_backtest_start, train_backtest_end,
+                         test_data_start, test_backtest_start, test_backtest_end,
+                         run_number):
     """Run a single experiment"""
     print(f"\n{'='*100}")
     print(f"🔬 運行: {ticker} | {period_name} | 第 {run_number}/10 次")
@@ -90,7 +106,8 @@ def run_single_experiment(ticker, period_name, train_start, train_end, test_star
     os.makedirs(ticker_dir, exist_ok=True)
     
     # Modify main.py
-    modify_main_py(train_start, train_end, test_start, test_end)
+    modify_main_py(train_data_start, train_backtest_start, train_backtest_end,
+                   test_data_start, test_backtest_start, test_backtest_end)
     
     # Run the experiment
     start_time = datetime.now()
@@ -160,17 +177,21 @@ def run_all_experiments():
     experiments = [
         {
             'name': '短訓練期',
-            'train_start': '1998-06-22',
-            'train_end': '1999-06-25',
-            'test_start': '1999-06-28',
-            'test_end': '2000-06-30'
+            'train_data_start': '1997-06-25',
+            'train_backtest_start': '1998-06-22',
+            'train_backtest_end': '1999-06-25',
+            'test_data_start': '1998-07-07',
+            'test_backtest_start': '1999-06-28',
+            'test_backtest_end': '2000-06-30'
         },
         {
             'name': '長訓練期',
-            'train_start': '1993-07-02',
-            'train_end': '1999-06-25',
-            'test_start': '1999-06-28',
-            'test_end': '2000-06-30'
+            'train_data_start': '1992-06-30',
+            'train_backtest_start': '1993-07-02',
+            'train_backtest_end': '1999-06-25',
+            'test_data_start': '1998-07-07',
+            'test_backtest_start': '1999-06-28',
+            'test_backtest_end': '2000-06-30'
         }
     ]
     
@@ -196,8 +217,10 @@ def run_all_experiments():
         for exp in experiments:
             print(f"\n{'='*100}")
             print(f"配置: {exp['name']}")
-            print(f"訓練期: {exp['train_start']} 至 {exp['train_end']}")
-            print(f"測試期: {exp['test_start']} 至 {exp['test_end']}")
+            print(f"訓練初始期: {exp['train_data_start']} 至 {exp['train_backtest_start']}")
+            print(f"訓練回測期: {exp['train_backtest_start']} 至 {exp['train_backtest_end']}")
+            print(f"測試初始期: {exp['test_data_start']} 至 {exp['test_backtest_start']}")
+            print(f"測試回測期: {exp['test_backtest_start']} 至 {exp['test_backtest_end']}")
             print(f"{'='*100}")
             
             for run in range(1, n_runs + 1):
@@ -205,10 +228,12 @@ def run_all_experiments():
                     result = run_single_experiment(
                         ticker=ticker,
                         period_name=exp['name'],
-                        train_start=exp['train_start'],
-                        train_end=exp['train_end'],
-                        test_start=exp['test_start'],
-                        test_end=exp['test_end'],
+                        train_data_start=exp['train_data_start'],
+                        train_backtest_start=exp['train_backtest_start'],
+                        train_backtest_end=exp['train_backtest_end'],
+                        test_data_start=exp['test_data_start'],
+                        test_backtest_start=exp['test_backtest_start'],
+                        test_backtest_end=exp['test_backtest_end'],
                         run_number=run
                     )
                     all_results.append(result)

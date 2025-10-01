@@ -64,18 +64,26 @@ def run_portfolio_evolution(args, data_dir):
         print(f"ERROR: Missing data for tickers: {missing_tickers}")
         return
     
-    # Split into train/test based on PRD short training period
-    train_start = '1993-07-02'
-    train_end = '1999-06-25'
-    test_start = '1999-06-28'
-    test_end = '2000-06-30'
+    # Split into train/test based on PRD with initial periods
+    # Long Training Period configuration
+    train_data_start = '1992-06-30'      # Training initial period start
+    train_backtest_start = '1993-07-02'  # Training backtest period start
+    train_backtest_end = '1999-06-25'    # Training backtest period end
+    
+    test_data_start = '1998-07-07'       # Testing initial period start
+    test_backtest_start = '1999-06-28'   # Testing backtest period start
+    test_backtest_end = '2000-06-30'     # Testing backtest period end
     
     print(f"\n--- Data Split Configuration ---")
-    print(f"Training Period: {train_start} to {train_end}")
-    print(f"Testing Period: {test_start} to {test_end}")
+    print(f"Training Initial Period: {train_data_start} to {train_backtest_start}")
+    print(f"Training Backtest Period: {train_backtest_start} to {train_backtest_end}")
+    print(f"Testing Initial Period: {test_data_start} to {test_backtest_start}")
+    print(f"Testing Backtest Period: {test_backtest_start} to {test_backtest_end}")
     
     train_data, test_data = split_train_test_data(
-        all_stock_data, train_start, train_end, test_start, test_end
+        all_stock_data,
+        train_data_start, train_backtest_start, train_backtest_end,
+        test_data_start, test_backtest_start, test_backtest_end
     )
     
     # Run evolution on training data
@@ -99,7 +107,20 @@ def run_portfolio_evolution(args, data_dir):
     print(f"Best Evolved Trading Rule:")
     print(best_individual)
     
-    train_backtester = PortfolioBacktestingEngine(train_data)
+    # Extract backtest configuration from train_data
+    train_backtest_config = {
+        ticker: {
+            'backtest_start': train_data[ticker]['backtest_start'],
+            'backtest_end': train_data[ticker]['backtest_end']
+        }
+        for ticker in train_data.keys()
+    }
+    
+    # Create backtester with configuration
+    train_backtester = PortfolioBacktestingEngine(
+        {ticker: train_data[ticker]['data'] for ticker in train_data.keys()},
+        backtest_config=train_backtest_config
+    )
     train_results = train_backtester.run_detailed_simulation(best_individual)
     
     print(f"\n--- Training Portfolio Summary ---")
@@ -117,7 +138,20 @@ def run_portfolio_evolution(args, data_dir):
     print("--- TESTING Results (Out-of-Sample) ---")
     print(f"{'='*80}")
     
-    test_backtester = PortfolioBacktestingEngine(test_data)
+    # Extract backtest configuration from test_data
+    test_backtest_config = {
+        ticker: {
+            'backtest_start': test_data[ticker]['backtest_start'],
+            'backtest_end': test_data[ticker]['backtest_end']
+        }
+        for ticker in test_data.keys()
+    }
+    
+    # Create backtester with configuration
+    test_backtester = PortfolioBacktestingEngine(
+        {ticker: test_data[ticker]['data'] for ticker in test_data.keys()},
+        backtest_config=test_backtest_config
+    )
     test_results = test_backtester.run_detailed_simulation(best_individual)
     
     print(f"\n--- Testing Portfolio Summary ---")

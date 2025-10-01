@@ -84,7 +84,22 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     # Determine if we're doing single ticker or portfolio evolution
     if isinstance(data, dict):
         # Portfolio mode: multiple tickers
-        backtester = PortfolioBacktestingEngine(data)
+        # Check if data contains the new structure with 'data' and 'backtest_start'
+        first_ticker = list(data.keys())[0]
+        if isinstance(data[first_ticker], dict) and 'data' in data[first_ticker]:
+            # New structure: extract data and backtest config
+            data_dict = {ticker: data[ticker]['data'] for ticker in data.keys()}
+            backtest_config = {
+                ticker: {
+                    'backtest_start': data[ticker]['backtest_start'],
+                    'backtest_end': data[ticker]['backtest_end']
+                }
+                for ticker in data.keys()
+            }
+            backtester = PortfolioBacktestingEngine(data_dict, backtest_config=backtest_config)
+        else:
+            # Old structure: direct DataFrame dict (backward compatibility)
+            backtester = PortfolioBacktestingEngine(data)
         print(f"Running PORTFOLIO evolution with {len(data)} tickers")
     else:
         # Single ticker mode (backward compatibility)
