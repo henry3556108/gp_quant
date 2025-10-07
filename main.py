@@ -65,14 +65,14 @@ def run_portfolio_evolution(args, data_dir):
         return
     
     # Split into train/test based on PRD with initial periods
-    # Long Training Period configuration
-    train_data_start = '1992-06-30'      # Training initial period start
-    train_backtest_start = '1993-07-02'  # Training backtest period start
-    train_backtest_end = '1999-06-25'    # Training backtest period end
+    # Use dates from command-line arguments or defaults
+    train_data_start = args.train_data_start
+    train_backtest_start = args.train_backtest_start
+    train_backtest_end = args.train_backtest_end
     
-    test_data_start = '1998-07-07'       # Testing initial period start
-    test_backtest_start = '1999-06-28'   # Testing backtest period start
-    test_backtest_end = '2000-06-30'     # Testing backtest period end
+    test_data_start = args.test_data_start
+    test_backtest_start = args.test_backtest_start
+    test_backtest_end = args.test_backtest_end
     
     print(f"\n--- Data Split Configuration ---")
     print(f"Training Initial Period: {train_data_start} to {train_backtest_start}")
@@ -414,6 +414,21 @@ def main():
     parser.add_argument("--population", type=int, default=500, help="Population size.")
     parser.add_argument("--mode", type=str, choices=['single', 'portfolio'], default='portfolio',
                         help="Evolution mode: 'single' for individual tickers, 'portfolio' for multi-ticker portfolio")
+    
+    # Date configuration arguments
+    parser.add_argument("--train_data_start", type=str, default='1992-06-30',
+                        help="Training initial period start date (YYYY-MM-DD)")
+    parser.add_argument("--train_backtest_start", type=str, default='1993-07-02',
+                        help="Training backtest period start date (YYYY-MM-DD)")
+    parser.add_argument("--train_backtest_end", type=str, default='1999-06-25',
+                        help="Training backtest period end date (YYYY-MM-DD)")
+    parser.add_argument("--test_data_start", type=str, default='1998-07-07',
+                        help="Testing initial period start date (YYYY-MM-DD)")
+    parser.add_argument("--test_backtest_start", type=str, default='1999-06-28',
+                        help="Testing backtest period start date (YYYY-MM-DD)")
+    parser.add_argument("--test_backtest_end", type=str, default='2000-06-30',
+                        help="Testing backtest period end date (YYYY-MM-DD)")
+    
     args = parser.parse_args()
 
     # --- 1. Setup Environment ---

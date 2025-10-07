@@ -207,11 +207,14 @@ logs/
 
 # Ignore all markdown files except specific ones
 *.md
+*.txt
 
 # But keep these important documentation files
 !README.md
 !PRD.md
 !DEAP_implementation_guide.md
+# !RUN_ALL_EXPERIMENTS_EXPLAINED.md
+# !MODIFY_MAIN_PY_EVALUATION.md
 
 # 如果使用 LaTeX 生成 PDF
 # *.aux

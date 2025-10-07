@@ -9,48 +9,7 @@ from datetime import datetime
 import pandas as pd
 import os
 
-def modify_main_py(train_data_start, train_backtest_start, train_backtest_end,
-                   test_data_start, test_backtest_start, test_backtest_end):
-    """Modify main.py with new date ranges including initial periods"""
-    with open('main.py', 'r') as f:
-        content = f.read()
-    
-    # Replace the date strings for training
-    content = re.sub(
-        r"train_data_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"train_data_start = '{train_data_start}'",
-        content
-    )
-    content = re.sub(
-        r"train_backtest_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"train_backtest_start = '{train_backtest_start}'",
-        content
-    )
-    content = re.sub(
-        r"train_backtest_end = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"train_backtest_end = '{train_backtest_end}'",
-        content
-    )
-    
-    # Replace the date strings for testing
-    content = re.sub(
-        r"test_data_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"test_data_start = '{test_data_start}'",
-        content
-    )
-    content = re.sub(
-        r"test_backtest_start = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"test_backtest_start = '{test_backtest_start}'",
-        content
-    )
-    content = re.sub(
-        r"test_backtest_end = '[0-9]{4}-[0-9]{2}-[0-9]{2}'",
-        f"test_backtest_end = '{test_backtest_end}'",
-        content
-    )
-    
-    with open('main.py', 'w') as f:
-        f.write(content)
+# modify_main_py() function removed - now using command-line arguments instead
 
 def extract_results(output):
     """Extract key results from output"""
@@ -105,20 +64,22 @@ def run_single_experiment(ticker, period_name,
     ticker_dir = f"experiments_results/{ticker.replace('.', '_')}"
     os.makedirs(ticker_dir, exist_ok=True)
     
-    # Modify main.py
-    modify_main_py(train_data_start, train_backtest_start, train_backtest_end,
-                   test_data_start, test_backtest_start, test_backtest_end)
-    
-    # Run the experiment
+    # Run the experiment with date parameters
     start_time = datetime.now()
     
-    result = subprocess.run(
-        ['python', 'main.py', '--tickers', ticker, '--mode', 'portfolio', 
-         '--generations', '50', '--population', '500'],
-        capture_output=True,
-        text=True,
-        cwd='/Users/hongyicheng/Desktop/code/研究/gp_paper'
-    )
+    result = subprocess.run([
+        'python', 'main.py',
+        '--tickers', ticker,
+        '--mode', 'portfolio',
+        '--generations', '50',
+        '--population', '500',
+        '--train_data_start', train_data_start,
+        '--train_backtest_start', train_backtest_start,
+        '--train_backtest_end', train_backtest_end,
+        '--test_data_start', test_data_start,
+        '--test_backtest_start', test_backtest_start,
+        '--test_backtest_end', test_backtest_end
+    ], capture_output=True, text=True)
     
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
@@ -172,7 +133,7 @@ def run_all_experiments():
     
     # Configuration
     tickers = ['ABX.TO', 'BBD-B.TO', 'RY.TO', 'TRP.TO']
-    n_runs = 10
+    n_runs = 1  # Set to 1 for testing
     
     experiments = [
         {
