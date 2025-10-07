@@ -211,15 +211,7 @@ logs/
 # But keep these important documentation files
 !README.md
 !PRD.md
-!ONBOARDING.md
 !DEAP_implementation_guide.md
-!BACKTEST_REFACTOR_DESIGN.md
-!EXPERIMENTS_README.md
-!REFACTOR_SUMMARY.md
-!PROJECT_REVIEW_CHECKLIST.md
-!**/ENGINE_EXPLAINED.md
-!**/BACKTESTING_ENGINE_EXPLAINED.md
-!**/GP_COMPONENTS_EXPLAINED.md
 
 # 如果使用 LaTeX 生成 PDF
 # *.aux
