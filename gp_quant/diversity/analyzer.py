@@ -12,6 +12,7 @@ from pathlib import Path
 from deap import creator, base, gp
 
 from .metrics import DiversityMetrics
+from .pnl_diversity import PnLDiversityMetrics
 
 
 class DiversityAnalyzer:
@@ -165,6 +166,62 @@ class DiversityAnalyzer:
         
         self.diversity_data.to_csv(output_path, index=False)
         print(f"Diversity data saved to: {output_path}")
+    
+    def calculate_pnl_diversity_trends(
+        self,
+        data: pd.DataFrame,
+        backtest_start: str = None,
+        backtest_end: str = None,
+        initial_capital: float = 100000.0,
+        sample_size: int = None,
+        verbose: bool = True
+    ) -> pd.DataFrame:
+        """
+        Calculate PnL correlation-based diversity for all loaded generations.
+        
+        Args:
+            data: Market data DataFrame for backtesting
+            backtest_start: Start date for backtest period
+            backtest_end: End date for backtest period
+            initial_capital: Initial capital for simulation
+            sample_size: If provided, randomly sample this many individuals per generation
+            verbose: Print progress information
+        
+        Returns:
+            DataFrame with PnL diversity metrics across generations
+        """
+        if not self.populations:
+            raise ValueError("No populations loaded. Call load_populations() first.")
+        
+        results = []
+        
+        for gen_num in sorted(self.populations.keys()):
+            if verbose:
+                print(f"Calculating PnL diversity for generation {gen_num}...")
+            
+            population = self.populations[gen_num]
+            
+            # Calculate PnL correlation diversity
+            metrics = PnLDiversityMetrics.calculate_pnl_correlation_diversity(
+                population=population,
+                data=data,
+                backtest_start=backtest_start,
+                backtest_end=backtest_end,
+                initial_capital=initial_capital,
+                sample_size=sample_size,
+                verbose=verbose
+            )
+            
+            # Add generation number
+            row = {'generation': gen_num, **metrics}
+            results.append(row)
+        
+        pnl_diversity_data = pd.DataFrame(results)
+        
+        if verbose:
+            print(f"\nPnL diversity calculation complete for {len(results)} generations")
+        
+        return pnl_diversity_data
     
     @classmethod
     def from_experiment_result(cls, experiment_dir: str, period: str, run_number: int):

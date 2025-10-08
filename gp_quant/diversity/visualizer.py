@@ -14,6 +14,73 @@ class DiversityVisualizer:
     """Visualize diversity trends across generations."""
     
     @staticmethod
+    def plot_pnl_diversity(
+        pnl_diversity_data: pd.DataFrame,
+        figsize: Tuple[int, int] = (12, 6),
+        save_path: Optional[str] = None,
+        show: bool = True
+    ):
+        """
+        Plot PnL correlation diversity trends.
+        
+        Args:
+            pnl_diversity_data: DataFrame from DiversityAnalyzer.calculate_pnl_diversity_trends()
+            figsize: Figure size
+            save_path: Path to save the figure
+            show: Whether to display the plot
+        """
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+        
+        # Plot 1: Mean correlation
+        ax1.plot(pnl_diversity_data['generation'], pnl_diversity_data['pnl_corr_mean'],
+                linewidth=2.5, marker='o', markersize=5, alpha=0.8, color='steelblue',
+                label='Mean Correlation')
+        
+        # Add trend line
+        z = np.polyfit(pnl_diversity_data['generation'], pnl_diversity_data['pnl_corr_mean'], 1)
+        p = np.poly1d(z)
+        trend_direction = '↗' if z[0] > 0 else '↘'
+        ax1.plot(pnl_diversity_data['generation'], p(pnl_diversity_data['generation']),
+                linestyle='--', alpha=0.6, linewidth=2, color='red', label=f'Trend {trend_direction}')
+        
+        ax1.set_title('PnL Correlation Mean', fontsize=13, fontweight='bold', pad=10)
+        ax1.set_xlabel('Generation', fontsize=11)
+        ax1.set_ylabel('Mean Correlation', fontsize=11)
+        ax1.grid(True, alpha=0.3, linestyle='--')
+        ax1.legend(fontsize=9, loc='best')
+        ax1.axhline(y=0, color='gray', linestyle=':', alpha=0.5)
+        
+        # Plot 2: Std deviation of correlation
+        ax2.plot(pnl_diversity_data['generation'], pnl_diversity_data['pnl_corr_std'],
+                linewidth=2.5, marker='o', markersize=5, alpha=0.8, color='darkorange',
+                label='Correlation Std Dev')
+        
+        # Add trend line
+        z2 = np.polyfit(pnl_diversity_data['generation'], pnl_diversity_data['pnl_corr_std'], 1)
+        p2 = np.poly1d(z2)
+        trend_direction2 = '↗' if z2[0] > 0 else '↘'
+        ax2.plot(pnl_diversity_data['generation'], p2(pnl_diversity_data['generation']),
+                linestyle='--', alpha=0.6, linewidth=2, color='red', label=f'Trend {trend_direction2}')
+        
+        ax2.set_title('PnL Correlation Std Dev', fontsize=13, fontweight='bold', pad=10)
+        ax2.set_xlabel('Generation', fontsize=11)
+        ax2.set_ylabel('Std Deviation', fontsize=11)
+        ax2.grid(True, alpha=0.3, linestyle='--')
+        ax2.legend(fontsize=9, loc='best')
+        
+        plt.suptitle('PnL Correlation-based Diversity', fontsize=16, fontweight='bold', y=0.995)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+    
+    @staticmethod
     def plot_diversity_trends(
         diversity_data: pd.DataFrame,
         metrics: Optional[List[str]] = None,

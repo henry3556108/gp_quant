@@ -363,6 +363,81 @@ class BacktestingEngine:
         except Exception as e:
             print(f"Error getting signals from individual: {e}")
             return np.array([], dtype=bool)
+    
+    def get_pnl_curve(self, individual: gp.PrimitiveTree) -> pd.Series:
+        """
+        Generate the cumulative PnL curve for an individual over the backtest period.
+        
+        Args:
+            individual: A GP tree representing the trading rule
+            
+        Returns:
+            pd.Series: Cumulative PnL indexed by date (backtest period only)
+                      Returns empty Series if evaluation fails
+        """
+        # Get signals for the individual
+        signals = self.get_signals(individual)
+        if len(signals) == 0:
+            return pd.Series(dtype=float)
+        
+        # Use backtest_data for simulation
+        data_to_use = self.backtest_data
+        
+        # Get signals for backtest period only
+        if self.backtest_start or self.backtest_end:
+            mask = pd.Series(False, index=self.data.index)
+            if self.backtest_start:
+                mask |= (self.data.index >= self.backtest_start)
+            if self.backtest_end:
+                mask &= (self.data.index <= self.backtest_end)
+            backtest_signals = signals[mask.values]
+        else:
+            backtest_signals = signals
+        
+        # Simulate trading and track daily PnL
+        position = 0
+        capital = self.initial_capital
+        shares = 0.0
+        
+        open_prices = data_to_use['Open'].to_numpy()
+        close_prices = data_to_use['Close'].to_numpy()
+        dates = data_to_use.index
+        
+        # Track cumulative PnL at each day
+        pnl_curve = np.zeros(len(backtest_signals))
+        
+        for i in range(len(backtest_signals) - 1):
+            signal = backtest_signals[i]
+            next_day_open_price = open_prices[i + 1]
+            
+            # Execute trades
+            if position == 0 and signal == True and capital > 0:
+                # Buy
+                shares = capital / next_day_open_price
+                capital = 0.0
+                position = 1
+            elif position == 1 and signal == False:
+                # Sell
+                capital = shares * next_day_open_price
+                shares = 0.0
+                position = 0
+            
+            # Calculate current portfolio value
+            if position == 1:
+                current_value = shares * close_prices[i + 1]
+            else:
+                current_value = capital
+            
+            # Cumulative PnL = current value - initial capital
+            pnl_curve[i + 1] = current_value - self.initial_capital
+        
+        # Handle final position
+        if position == 1:
+            final_value = shares * close_prices[-1]
+            pnl_curve[-1] = final_value - self.initial_capital
+        
+        # Return as pandas Series with dates
+        return pd.Series(pnl_curve, index=dates)
 
 
 class PortfolioBacktestingEngine:
