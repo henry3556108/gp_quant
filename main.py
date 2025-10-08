@@ -92,9 +92,13 @@ def run_portfolio_evolution(args, data_dir):
     print(f"{'='*80}")
     
     # Setup individual records directory for population snapshots
+    # Use a unique temporary name to avoid conflicts with parallel runs
+    import time
     ticker_clean = args.tickers[0].replace('.', '_')
     ticker_dir = f"experiments_results/{ticker_clean}"
-    individual_records_dir = os.path.join(ticker_dir, "individual_records")
+    timestamp = int(time.time() * 1000)  # millisecond timestamp
+    pid = os.getpid()
+    individual_records_dir = os.path.join(ticker_dir, f"individual_records_tmp_{pid}_{timestamp}")
     os.makedirs(individual_records_dir, exist_ok=True)
     
     pop, log, hof = run_evolution(

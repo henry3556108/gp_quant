@@ -112,12 +112,20 @@ def run_single_experiment(ticker, period_name,
         results['test_trades_file'] = new_test_name
     
     # Move individual_records directory if it exists
-    individual_records_src = f"{ticker_dir}/individual_records"
-    if os.path.exists(individual_records_src):
+    # Look for temporary individual_records directories (created with unique names)
+    import glob
+    individual_records_pattern = f"{ticker_dir}/individual_records_tmp_*"
+    individual_records_dirs = glob.glob(individual_records_pattern)
+    
+    if individual_records_dirs:
+        # Should only be one, but take the most recent if multiple
+        individual_records_src = sorted(individual_records_dirs)[-1]
         individual_records_dst = f"{ticker_dir}/individual_records_{period_short}_run{run_number:02d}"
+        
         if os.path.exists(individual_records_dst):
             import shutil
             shutil.rmtree(individual_records_dst)
+        
         os.rename(individual_records_src, individual_records_dst)
         results['individual_records_dir'] = individual_records_dst
         
