@@ -91,10 +91,26 @@ def run_portfolio_evolution(args, data_dir):
     print("--- Running Evolution on TRAINING Data ---")
     print(f"{'='*80}")
     
+    # Setup individual records directory for population snapshots
+    if args.individual_records_dir:
+        # Use the directory name provided by caller (e.g., run_all_experiments.py)
+        individual_records_dir = args.individual_records_dir
+        os.makedirs(individual_records_dir, exist_ok=True)
+    else:
+        # Fallback: use a unique temporary name for backward compatibility
+        import time
+        ticker_clean = args.tickers[0].replace('.', '_')
+        ticker_dir = f"experiments_results/{ticker_clean}"
+        timestamp = int(time.time() * 1000)
+        pid = os.getpid()
+        individual_records_dir = os.path.join(ticker_dir, f"individual_records_tmp_{pid}_{timestamp}")
+        os.makedirs(individual_records_dir, exist_ok=True)
+    
     pop, log, hof = run_evolution(
         data=train_data,  # Pass dictionary for portfolio mode
         n_generations=args.generations,
-        population_size=args.population
+        population_size=args.population,
+        individual_records_dir=individual_records_dir
     )
     
     best_individual = hof[0]
@@ -428,6 +444,8 @@ def main():
                         help="Testing backtest period start date (YYYY-MM-DD)")
     parser.add_argument("--test_backtest_end", type=str, default='2000-06-30',
                         help="Testing backtest period end date (YYYY-MM-DD)")
+    parser.add_argument("--individual_records_dir", type=str, default=None,
+                        help="Directory to save individual records (population snapshots)")
     
     args = parser.parse_args()
 

@@ -9,7 +9,11 @@ import random
 import operator
 import numpy as np
 import pandas as pd
-from typing import Dict, Union
+import dill
+import os
+import fcntl
+import time
+from typing import Dict, Union, Optional
 from tqdm import trange, tqdm
 from deap import base, creator, tools, gp
 
@@ -62,7 +66,83 @@ def ranked_selection(individuals, k, max_rank_fitness=1.8, min_rank_fitness=0.2)
 
     return chosen
 
-def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05):
+def save_population(population, generation, individual_records_dir, max_retries=3):
+    """
+    Save the current population to a pickle file using dill with global file locking.
+    
+    Uses blocking file lock to ensure all processes wait their turn to write,
+    guaranteeing that all generations are saved without timeout issues.
+    
+    Args:
+        population: The population to save
+        generation: The current generation number
+        individual_records_dir: The base directory for saving populations
+        max_retries: Maximum number of retry attempts for write failures
+    """
+    if individual_records_dir is None:
+        return
+    
+    # Create generation-specific directory
+    gen_dir = os.path.join(individual_records_dir, f"generation_{generation:03d}")
+    os.makedirs(gen_dir, exist_ok=True)
+    
+    pickle_file = os.path.join(gen_dir, "population.pkl")
+    
+    # Use a global lock file in the parent directory to serialize writes
+    # This prevents I/O contention when multiple processes try to write simultaneously
+    global_lock_file = os.path.join(os.path.dirname(individual_records_dir), ".population_save.lock")
+    
+    for attempt in range(max_retries):
+        lock_fd = None
+        try:
+            # Create and acquire exclusive lock on global lock file
+            lock_fd = os.open(global_lock_file, os.O_CREAT | os.O_WRONLY, 0o644)
+            
+            # Use BLOCKING lock - wait indefinitely until lock is available
+            # This ensures all processes will eventually write, no timeouts
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            
+            # Lock acquired, now save the population
+            with open(pickle_file, 'wb') as f:
+                dill.dump(population, f)
+                f.flush()  # Force write to buffer
+                os.fsync(f.fileno())  # Force write to disk
+            
+            # Verify the file was written successfully
+            file_size = os.path.getsize(pickle_file) if os.path.exists(pickle_file) else 0
+            if file_size > 0:
+                # Success! Release lock and return
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+                lock_fd = None
+                return
+            else:
+                # File is empty, retry
+                print(f"Warning: Gen {generation} - File empty (attempt {attempt+1}/{max_retries})")
+                
+        except Exception as e:
+            # Only retry on actual write errors, not lock errors
+            print(f"Warning: Failed to save gen {generation} (attempt {attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(0.2 * (attempt + 1))  # Exponential backoff
+            else:
+                import traceback
+                traceback.print_exc()
+                
+        finally:
+            # Always release lock and close file descriptor
+            if lock_fd is not None:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    os.close(lock_fd)
+                except:
+                    pass
+    
+    # If we get here, all retries failed
+    print(f"ERROR: Failed to save population for generation {generation} after {max_retries} attempts")
+
+def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05, 
+                  individual_records_dir: Optional[str] = None):
     """
     Configures and runs the main evolutionary algorithm.
 
@@ -74,6 +154,8 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         n_generations: The number of generations to run.
         crossover_prob: The probability of crossover.
         mutation_prob: The probability of mutation.
+        individual_records_dir: Optional directory path to save population snapshots.
+                               If provided, each generation's population will be saved as a pickle file.
 
     Returns:
         A tuple containing the final population, the logbook, and the hall of fame.
@@ -148,6 +230,9 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     record = stats.compile(pop)
     logbook.record(gen=0, nevals=len(pop), **record)
     print(logbook.stream)
+    
+    # Save initial population (generation 0)
+    save_population(pop, 0, individual_records_dir)
 
     # Use trange for a progress bar
     for gen in (pbar := trange(1, n_generations + 1, desc="Generation")):
@@ -190,4 +275,8 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         logbook.record(gen=gen, nevals=len(invalid_ind), **record)
         # Update progress bar with stats
         pbar.set_description(f"Gen {gen} | Avg: {record['avg']:.2f} | Best: {record['max']:.2f}")
+        
+        # Save population for this generation
+        save_population(pop, gen, individual_records_dir)
+    
     return pop, logbook, hof

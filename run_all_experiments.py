@@ -66,6 +66,12 @@ def run_single_experiment(ticker, period_name,
     ticker_dir = f"experiments_results/{ticker.replace('.', '_')}"
     os.makedirs(ticker_dir, exist_ok=True)
     
+    # Determine period short name
+    period_short = 'short' if period_name == '短訓練期' else 'long'
+    
+    # Prepare the final individual_records directory name
+    individual_records_dir = f"{ticker_dir}/individual_records_{period_short}_run{run_number:02d}"
+    
     # Run the experiment with date parameters
     start_time = datetime.now()
     
@@ -80,7 +86,8 @@ def run_single_experiment(ticker, period_name,
         '--train_backtest_end', train_backtest_end,
         '--test_data_start', test_data_start,
         '--test_backtest_start', test_backtest_start,
-        '--test_backtest_end', test_backtest_end
+        '--test_backtest_end', test_backtest_end,
+        '--individual_records_dir', individual_records_dir
     ], capture_output=True, text=True)
     
     end_time = datetime.now()
@@ -110,6 +117,19 @@ def run_single_experiment(ticker, period_name,
         new_test_name = f"{ticker_dir}/{period_short}_run{run_number:02d}_test_trades.csv"
         os.rename(test_trades, new_test_name)
         results['test_trades_file'] = new_test_name
+    
+    # Record individual_records directory info (no need to rename, already has final name)
+    if os.path.exists(individual_records_dir):
+        results['individual_records_dir'] = individual_records_dir
+        
+        # Calculate storage size
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(individual_records_dir):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                if os.path.exists(filepath):
+                    total_size += os.path.getsize(filepath)
+        results['individual_records_size_bytes'] = total_size
     
     # Save individual result JSON
     result_json_file = f"{ticker_dir}/{period_short}_run{run_number:02d}_result.json"
@@ -325,6 +345,25 @@ def generate_summary(df, total_duration):
     else:
         print(f"\n⚠️ 短訓練期表現優於長訓練期 (勝率高 {short_win_rate - long_win_rate:.1f}%)")
     
+    # Individual records storage statistics
+    if 'individual_records_size_bytes' in df.columns:
+        total_storage = df['individual_records_size_bytes'].sum()
+        avg_storage = df['individual_records_size_bytes'].mean()
+        
+        def format_bytes(bytes_size):
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if bytes_size < 1024.0:
+                    return f"{bytes_size:.2f} {unit}"
+                bytes_size /= 1024.0
+            return f"{bytes_size:.2f} TB"
+        
+        print("\n" + "="*100)
+        print("💾 Individual Records 儲存統計")
+        print("="*100)
+        print(f"總儲存空間: {format_bytes(total_storage)}")
+        print(f"平均每次運行: {format_bytes(avg_storage)}")
+        print(f"實驗總數: {len(df)}")
+    
     print("\n✅ 所有結果已儲存至:")
     print("   - all_experiments_results.csv (匯總表格)")
     print("   - all_experiments_results.json (匯總JSON)")
@@ -337,11 +376,13 @@ def generate_summary(df, total_duration):
         print(f"   │   ├── short_run01_test_trades.csv")
         print(f"   │   ├── short_run01_result.json")
         print(f"   │   ├── short_run01_output.log")
+        print(f"   │   ├── individual_records_short_run01/ (族群快照)")
         print(f"   │   ├── ... (run02 到 run10)")
         print(f"   │   ├── long_run01_train_trades.csv")
         print(f"   │   ├── long_run01_test_trades.csv")
         print(f"   │   ├── long_run01_result.json")
         print(f"   │   ├── long_run01_output.log")
+        print(f"   │   ├── individual_records_long_run01/ (族群快照)")
         print(f"   │   └── ... (run02 到 run10)")
     print("="*100 + "\n")
 
