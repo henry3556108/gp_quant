@@ -66,19 +66,18 @@ def ranked_selection(individuals, k, max_rank_fitness=1.8, min_rank_fitness=0.2)
 
     return chosen
 
-def save_population(population, generation, individual_records_dir, max_retries=3, lock_timeout=60):
+def save_population(population, generation, individual_records_dir, max_retries=3):
     """
-    Save the current population to a pickle file using dill with global file locking to prevent I/O contention.
+    Save the current population to a pickle file using dill with global file locking.
     
-    Uses a global lock file to ensure only a limited number of processes write to disk simultaneously,
-    preventing I/O bottlenecks and race conditions.
+    Uses blocking file lock to ensure all processes wait their turn to write,
+    guaranteeing that all generations are saved without timeout issues.
     
     Args:
         population: The population to save
         generation: The current generation number
         individual_records_dir: The base directory for saving populations
-        max_retries: Maximum number of retry attempts
-        lock_timeout: Maximum time to wait for lock acquisition (seconds)
+        max_retries: Maximum number of retry attempts for write failures
     """
     if individual_records_dir is None:
         return
@@ -89,7 +88,7 @@ def save_population(population, generation, individual_records_dir, max_retries=
     
     pickle_file = os.path.join(gen_dir, "population.pkl")
     
-    # Use a global lock file in the parent directory to limit concurrent writes
+    # Use a global lock file in the parent directory to serialize writes
     # This prevents I/O contention when multiple processes try to write simultaneously
     global_lock_file = os.path.join(os.path.dirname(individual_records_dir), ".population_save.lock")
     
@@ -99,20 +98,9 @@ def save_population(population, generation, individual_records_dir, max_retries=
             # Create and acquire exclusive lock on global lock file
             lock_fd = os.open(global_lock_file, os.O_CREAT | os.O_WRONLY, 0o644)
             
-            # Try to acquire lock with timeout
-            start_time = time.time()
-            lock_acquired = False
-            while not lock_acquired:
-                try:
-                    # Use non-blocking lock to check availability
-                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    lock_acquired = True
-                except (IOError, OSError):
-                    # Lock is held by another process
-                    elapsed = time.time() - start_time
-                    if elapsed > lock_timeout:
-                        raise TimeoutError(f"Failed to acquire lock after {lock_timeout:.1f}s")
-                    time.sleep(0.05)  # Wait 50ms before retry
+            # Use BLOCKING lock - wait indefinitely until lock is available
+            # This ensures all processes will eventually write, no timeouts
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
             
             # Lock acquired, now save the population
             with open(pickle_file, 'wb') as f:
@@ -129,14 +117,11 @@ def save_population(population, generation, individual_records_dir, max_retries=
                 lock_fd = None
                 return
             else:
+                # File is empty, retry
                 print(f"Warning: Gen {generation} - File empty (attempt {attempt+1}/{max_retries})")
                 
-        except TimeoutError as e:
-            print(f"Warning: Lock timeout for gen {generation} (attempt {attempt+1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(1.0 * (attempt + 1))  # Longer backoff for timeout
-                
         except Exception as e:
+            # Only retry on actual write errors, not lock errors
             print(f"Warning: Failed to save gen {generation} (attempt {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(0.2 * (attempt + 1))  # Exponential backoff
