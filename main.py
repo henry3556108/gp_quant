@@ -91,10 +91,17 @@ def run_portfolio_evolution(args, data_dir):
     print("--- Running Evolution on TRAINING Data ---")
     print(f"{'='*80}")
     
+    # Setup individual records directory for population snapshots
+    ticker_clean = args.tickers[0].replace('.', '_')
+    ticker_dir = f"experiments_results/{ticker_clean}"
+    individual_records_dir = os.path.join(ticker_dir, "individual_records")
+    os.makedirs(individual_records_dir, exist_ok=True)
+    
     pop, log, hof = run_evolution(
         data=train_data,  # Pass dictionary for portfolio mode
         n_generations=args.generations,
-        population_size=args.population
+        population_size=args.population,
+        individual_records_dir=individual_records_dir
     )
     
     best_individual = hof[0]

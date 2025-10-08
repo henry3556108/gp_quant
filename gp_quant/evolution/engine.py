@@ -9,7 +9,9 @@ import random
 import operator
 import numpy as np
 import pandas as pd
-from typing import Dict, Union
+import dill
+import os
+from typing import Dict, Union, Optional
 from tqdm import trange, tqdm
 from deap import base, creator, tools, gp
 
@@ -62,7 +64,29 @@ def ranked_selection(individuals, k, max_rank_fitness=1.8, min_rank_fitness=0.2)
 
     return chosen
 
-def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05):
+def save_population(population, generation, individual_records_dir):
+    """
+    Save the current population to a pickle file using dill.
+    
+    Args:
+        population: The population to save
+        generation: The current generation number
+        individual_records_dir: The base directory for saving populations
+    """
+    if individual_records_dir is None:
+        return
+    
+    # Create generation-specific directory
+    gen_dir = os.path.join(individual_records_dir, f"generation_{generation:03d}")
+    os.makedirs(gen_dir, exist_ok=True)
+    
+    # Save population as pickle file using dill (handles lambda functions better)
+    pickle_file = os.path.join(gen_dir, "population.pkl")
+    with open(pickle_file, 'wb') as f:
+        dill.dump(population, f)
+
+def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05, 
+                  individual_records_dir: Optional[str] = None):
     """
     Configures and runs the main evolutionary algorithm.
 
@@ -74,6 +98,8 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         n_generations: The number of generations to run.
         crossover_prob: The probability of crossover.
         mutation_prob: The probability of mutation.
+        individual_records_dir: Optional directory path to save population snapshots.
+                               If provided, each generation's population will be saved as a pickle file.
 
     Returns:
         A tuple containing the final population, the logbook, and the hall of fame.
@@ -148,6 +174,9 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     record = stats.compile(pop)
     logbook.record(gen=0, nevals=len(pop), **record)
     print(logbook.stream)
+    
+    # Save initial population (generation 0)
+    save_population(pop, 0, individual_records_dir)
 
     # Use trange for a progress bar
     for gen in (pbar := trange(1, n_generations + 1, desc="Generation")):
@@ -190,4 +219,8 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         logbook.record(gen=gen, nevals=len(invalid_ind), **record)
         # Update progress bar with stats
         pbar.set_description(f"Gen {gen} | Avg: {record['avg']:.2f} | Best: {record['max']:.2f}")
+        
+        # Save population for this generation
+        save_population(pop, gen, individual_records_dir)
+    
     return pop, logbook, hof
