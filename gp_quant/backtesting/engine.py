@@ -437,7 +437,13 @@ class BacktestingEngine:
             pnl_curve[-1] = final_value - self.initial_capital
         
         # Return as pandas Series with dates
-        return pd.Series(pnl_curve, index=dates)
+        pnl_series = pd.Series(pnl_curve, index=dates)
+        
+        # Handle NaN values (replace with forward fill, then 0)
+        if pnl_series.isna().any():
+            pnl_series = pnl_series.fillna(method='ffill').fillna(0)
+        
+        return pnl_series
 
 
 class PortfolioBacktestingEngine:

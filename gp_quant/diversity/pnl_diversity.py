@@ -107,15 +107,31 @@ class PnLDiversityMetrics:
         if verbose:
             print(f"  Calculating correlation matrix ({len(pnl_curves)} x {len(pnl_curves)})...")
         
-        corr_matrix = np.corrcoef(pnl_matrix)
-        
-        # Extract upper triangle (excluding diagonal)
-        # This gives us all unique pairs
-        upper_tri_indices = np.triu_indices_from(corr_matrix, k=1)
-        correlations = corr_matrix[upper_tri_indices]
-        
-        # Remove any NaN values (can occur if curves have no variance)
-        correlations = correlations[~np.isnan(correlations)]
+        try:
+            corr_matrix = np.corrcoef(pnl_matrix)
+            
+            # Check if correlation matrix is valid
+            if corr_matrix.shape[0] < 2:
+                if verbose:
+                    print(f"  Warning: Correlation matrix too small: {corr_matrix.shape}")
+                correlations = np.array([])
+            else:
+                # Extract upper triangle (excluding diagonal)
+                # This gives us all unique pairs
+                upper_tri_indices = np.triu_indices_from(corr_matrix, k=1)
+                correlations = corr_matrix[upper_tri_indices]
+                
+                # Remove any NaN or inf values
+                correlations = correlations[np.isfinite(correlations)]
+                
+                if verbose:
+                    print(f"  Valid correlations: {len(correlations)}")
+                    if len(correlations) > 0:
+                        print(f"  Correlation range: [{np.min(correlations):.4f}, {np.max(correlations):.4f}]")
+        except Exception as e:
+            if verbose:
+                print(f"  Error calculating correlation matrix: {e}")
+            correlations = np.array([])
         
         if len(correlations) == 0:
             return {
