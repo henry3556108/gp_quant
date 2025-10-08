@@ -441,7 +441,7 @@ class BacktestingEngine:
         
         # Handle NaN values (replace with forward fill, then 0)
         if pnl_series.isna().any():
-            pnl_series = pnl_series.fillna(method='ffill').fillna(0)
+            pnl_series = pnl_series.ffill().fillna(0)
         
         return pnl_series
 
