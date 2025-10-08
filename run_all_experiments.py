@@ -1,6 +1,7 @@
 """
 Run comprehensive experiments for all tickers
 Each ticker will be tested 10 times with both short and long training periods
+Supports parallel execution using multiprocessing
 """
 import subprocess
 import json
@@ -8,6 +9,8 @@ import re
 from datetime import datetime
 import pandas as pd
 import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
 
 # modify_main_py() function removed - now using command-line arguments instead
 
@@ -55,10 +58,9 @@ def run_single_experiment(ticker, period_name,
                          train_data_start, train_backtest_start, train_backtest_end,
                          test_data_start, test_backtest_start, test_backtest_end,
                          run_number):
-    """Run a single experiment"""
-    print(f"\n{'='*100}")
-    print(f"🔬 運行: {ticker} | {period_name} | 第 {run_number}/10 次")
-    print(f"{'='*100}")
+    """Run a single experiment (parallel-safe)"""
+    # Reduced output for parallel execution
+    print(f"🔬 開始: {ticker} | {period_name} | Run {run_number}")
     
     # Create directory for this ticker if it doesn't exist
     ticker_dir = f"experiments_results/{ticker.replace('.', '_')}"
@@ -119,21 +121,25 @@ def run_single_experiment(ticker, period_name,
     with open(log_file, 'w') as f:
         f.write(result.stdout)
     
-    # Print summary
+    # Print summary (compact for parallel execution)
     if results['test_excess_return'] is not None:
-        status = "✅ 盈利" if results['test_excess_return'] > 0 else "❌ 虧損"
-        print(f"樣本外超額報酬: ${results['test_excess_return']:,.2f} {status}")
-    print(f"執行時間: {duration:.2f} 秒")
-    print(f"📁 文件已保存至: {ticker_dir}/")
+        status = "✅" if results['test_excess_return'] > 0 else "❌"
+        print(f"✓ 完成: {ticker} | {period_name} | Run {run_number} | "
+              f"超額: ${results['test_excess_return']:,.0f} {status} | {duration:.1f}s")
     
     return results
 
-def run_all_experiments():
-    """Run all experiments for all tickers"""
+def run_all_experiments(max_workers=8):
+    """
+    Run all experiments for all tickers with parallel execution
+    
+    Args:
+        max_workers: Maximum number of parallel workers (default: 8)
+    """
     
     # Configuration
     tickers = ['ABX.TO', 'BBD-B.TO', 'RY.TO', 'TRP.TO']
-    n_runs = 1  # Set to 1 for testing
+    n_runs = 10
     
     experiments = [
         {
@@ -156,57 +162,72 @@ def run_all_experiments():
         }
     ]
     
+    # Build list of all experiment tasks
+    tasks = []
+    for ticker in tickers:
+        for exp in experiments:
+            for run in range(1, n_runs + 1):
+                tasks.append({
+                    'ticker': ticker,
+                    'period_name': exp['name'],
+                    'train_data_start': exp['train_data_start'],
+                    'train_backtest_start': exp['train_backtest_start'],
+                    'train_backtest_end': exp['train_backtest_end'],
+                    'test_data_start': exp['test_data_start'],
+                    'test_backtest_start': exp['test_backtest_start'],
+                    'test_backtest_end': exp['test_backtest_end'],
+                    'run_number': run
+                })
+    
+    total_experiments = len(tasks)
     all_results = []
-    total_experiments = len(tickers) * len(experiments) * n_runs
-    completed = 0
     
     print("\n" + "🚀"*50)
-    print(f"開始大規模實驗")
+    print(f"開始大規模實驗（並行執行）")
     print(f"股票數量: {len(tickers)}")
     print(f"訓練期類型: {len(experiments)}")
     print(f"每個配置運行次數: {n_runs}")
     print(f"總實驗數: {total_experiments}")
+    print(f"並行工作數: {max_workers}")
     print("🚀"*50 + "\n")
     
     start_time_all = datetime.now()
     
-    for ticker in tickers:
-        print(f"\n{'#'*100}")
-        print(f"# 開始處理股票: {ticker}")
-        print(f"{'#'*100}")
+    # Execute experiments in parallel
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_task = {
+            executor.submit(
+                run_single_experiment,
+                ticker=task['ticker'],
+                period_name=task['period_name'],
+                train_data_start=task['train_data_start'],
+                train_backtest_start=task['train_backtest_start'],
+                train_backtest_end=task['train_backtest_end'],
+                test_data_start=task['test_data_start'],
+                test_backtest_start=task['test_backtest_start'],
+                test_backtest_end=task['test_backtest_end'],
+                run_number=task['run_number']
+            ): task for task in tasks
+        }
         
-        for exp in experiments:
-            print(f"\n{'='*100}")
-            print(f"配置: {exp['name']}")
-            print(f"訓練初始期: {exp['train_data_start']} 至 {exp['train_backtest_start']}")
-            print(f"訓練回測期: {exp['train_backtest_start']} 至 {exp['train_backtest_end']}")
-            print(f"測試初始期: {exp['test_data_start']} 至 {exp['test_backtest_start']}")
-            print(f"測試回測期: {exp['test_backtest_start']} 至 {exp['test_backtest_end']}")
-            print(f"{'='*100}")
-            
-            for run in range(1, n_runs + 1):
-                try:
-                    result = run_single_experiment(
-                        ticker=ticker,
-                        period_name=exp['name'],
-                        train_data_start=exp['train_data_start'],
-                        train_backtest_start=exp['train_backtest_start'],
-                        train_backtest_end=exp['train_backtest_end'],
-                        test_data_start=exp['test_data_start'],
-                        test_backtest_start=exp['test_backtest_start'],
-                        test_backtest_end=exp['test_backtest_end'],
-                        run_number=run
-                    )
-                    all_results.append(result)
-                    completed += 1
-                    
-                    # Progress update
-                    progress = (completed / total_experiments) * 100
-                    print(f"\n📊 總進度: {completed}/{total_experiments} ({progress:.1f}%)")
-                    
-                except Exception as e:
-                    print(f"❌ 錯誤: {e}")
-                    continue
+        # Process completed tasks as they finish
+        completed = 0
+        for future in as_completed(future_to_task):
+            task = future_to_task[future]
+            try:
+                result = future.result()
+                all_results.append(result)
+                completed += 1
+                
+                # Progress update
+                progress = (completed / total_experiments) * 100
+                print(f"\n📊 總進度: {completed}/{total_experiments} ({progress:.1f}%) | "
+                      f"剛完成: {task['ticker']} {task['period_name']} Run {task['run_number']}")
+                
+            except Exception as e:
+                print(f"❌ 錯誤 ({task['ticker']} {task['period_name']} Run {task['run_number']}): {e}")
+                continue
     
     end_time_all = datetime.now()
     total_duration = (end_time_all - start_time_all).total_seconds()

@@ -74,10 +74,10 @@ pset.addEphemeralConstant("rand_float", lambda: random.uniform(-1, 1), float)
 # Random integer constants for lookback periods (e.g., 5 to 200 days)
 pset.addEphemeralConstant("rand_int_n", lambda: random.randint(5, 200), int)
 
-# Add some fixed common lookback periods as terminals
-pset.addTerminal(10, int)
-pset.addTerminal(20, int)
-pset.addTerminal(50, int)
-pset.addTerminal(100, int)
+# # Add some fixed common lookback periods as terminals
+# pset.addTerminal(10, int)
+# pset.addTerminal(20, int)
+# pset.addTerminal(50, int)
+# pset.addTerminal(100, int)
 
 print("Primitive set configured successfully.")
