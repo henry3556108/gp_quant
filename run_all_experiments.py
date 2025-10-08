@@ -66,6 +66,9 @@ def run_single_experiment(ticker, period_name,
     ticker_dir = f"experiments_results/{ticker.replace('.', '_')}"
     os.makedirs(ticker_dir, exist_ok=True)
     
+    # Prepare the final individual_records directory name
+    individual_records_dir = f"{ticker_dir}/individual_records_{period_short}_run{run_number:02d}"
+    
     # Run the experiment with date parameters
     start_time = datetime.now()
     
@@ -80,7 +83,8 @@ def run_single_experiment(ticker, period_name,
         '--train_backtest_end', train_backtest_end,
         '--test_data_start', test_data_start,
         '--test_backtest_start', test_backtest_start,
-        '--test_backtest_end', test_backtest_end
+        '--test_backtest_end', test_backtest_end,
+        '--individual_records_dir', individual_records_dir
     ], capture_output=True, text=True)
     
     end_time = datetime.now()
@@ -111,27 +115,13 @@ def run_single_experiment(ticker, period_name,
         os.rename(test_trades, new_test_name)
         results['test_trades_file'] = new_test_name
     
-    # Move individual_records directory if it exists
-    # Look for temporary individual_records directories (created with unique names)
-    import glob
-    individual_records_pattern = f"{ticker_dir}/individual_records_tmp_*"
-    individual_records_dirs = glob.glob(individual_records_pattern)
-    
-    if individual_records_dirs:
-        # Should only be one, but take the most recent if multiple
-        individual_records_src = sorted(individual_records_dirs)[-1]
-        individual_records_dst = f"{ticker_dir}/individual_records_{period_short}_run{run_number:02d}"
-        
-        if os.path.exists(individual_records_dst):
-            import shutil
-            shutil.rmtree(individual_records_dst)
-        
-        os.rename(individual_records_src, individual_records_dst)
-        results['individual_records_dir'] = individual_records_dst
+    # Record individual_records directory info (no need to rename, already has final name)
+    if os.path.exists(individual_records_dir):
+        results['individual_records_dir'] = individual_records_dir
         
         # Calculate storage size
         total_size = 0
-        for dirpath, dirnames, filenames in os.walk(individual_records_dst):
+        for dirpath, dirnames, filenames in os.walk(individual_records_dir):
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
                 if os.path.exists(filepath):
