@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import dill
 import os
+import fcntl
+import time
 from typing import Dict, Union, Optional
 from tqdm import trange, tqdm
 from deap import base, creator, tools, gp
@@ -64,20 +66,22 @@ def ranked_selection(individuals, k, max_rank_fitness=1.8, min_rank_fitness=0.2)
 
     return chosen
 
-def save_population(population, generation, individual_records_dir, max_retries=3):
+def save_population(population, generation, individual_records_dir, max_retries=3, lock_timeout=60):
     """
-    Save the current population to a pickle file using dill with retry mechanism.
+    Save the current population to a pickle file using dill with global file locking to prevent I/O contention.
+    
+    Uses a global lock file to ensure only a limited number of processes write to disk simultaneously,
+    preventing I/O bottlenecks and race conditions.
     
     Args:
         population: The population to save
         generation: The current generation number
         individual_records_dir: The base directory for saving populations
         max_retries: Maximum number of retry attempts
+        lock_timeout: Maximum time to wait for lock acquisition (seconds)
     """
     if individual_records_dir is None:
         return
-    
-    import time
     
     # Create generation-specific directory
     gen_dir = os.path.join(individual_records_dir, f"generation_{generation:03d}")
@@ -85,27 +89,69 @@ def save_population(population, generation, individual_records_dir, max_retries=
     
     pickle_file = os.path.join(gen_dir, "population.pkl")
     
+    # Use a global lock file in the parent directory to limit concurrent writes
+    # This prevents I/O contention when multiple processes try to write simultaneously
+    global_lock_file = os.path.join(os.path.dirname(individual_records_dir), ".population_save.lock")
+    
     for attempt in range(max_retries):
+        lock_fd = None
         try:
-            # Save population as pickle file using dill
+            # Create and acquire exclusive lock on global lock file
+            lock_fd = os.open(global_lock_file, os.O_CREAT | os.O_WRONLY, 0o644)
+            
+            # Try to acquire lock with timeout
+            start_time = time.time()
+            lock_acquired = False
+            while not lock_acquired:
+                try:
+                    # Use non-blocking lock to check availability
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    lock_acquired = True
+                except (IOError, OSError):
+                    # Lock is held by another process
+                    elapsed = time.time() - start_time
+                    if elapsed > lock_timeout:
+                        raise TimeoutError(f"Failed to acquire lock after {lock_timeout:.1f}s")
+                    time.sleep(0.05)  # Wait 50ms before retry
+            
+            # Lock acquired, now save the population
             with open(pickle_file, 'wb') as f:
                 dill.dump(population, f)
-                f.flush()  # Force write to disk
-                os.fsync(f.fileno())  # Ensure data is written to disk
+                f.flush()  # Force write to buffer
+                os.fsync(f.fileno())  # Force write to disk
             
             # Verify the file was written successfully
-            if os.path.exists(pickle_file) and os.path.getsize(pickle_file) > 0:
-                return  # Success!
+            file_size = os.path.getsize(pickle_file) if os.path.exists(pickle_file) else 0
+            if file_size > 0:
+                # Success! Release lock and return
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+                lock_fd = None
+                return
             else:
-                print(f"Warning: Generation {generation} - File written but empty (attempt {attempt+1}/{max_retries})")
+                print(f"Warning: Gen {generation} - File empty (attempt {attempt+1}/{max_retries})")
+                
+        except TimeoutError as e:
+            print(f"Warning: Lock timeout for gen {generation} (attempt {attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1.0 * (attempt + 1))  # Longer backoff for timeout
                 
         except Exception as e:
-            print(f"Warning: Failed to save population for generation {generation} (attempt {attempt+1}/{max_retries}): {e}")
+            print(f"Warning: Failed to save gen {generation} (attempt {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
-                time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                time.sleep(0.2 * (attempt + 1))  # Exponential backoff
             else:
                 import traceback
                 traceback.print_exc()
+                
+        finally:
+            # Always release lock and close file descriptor
+            if lock_fd is not None:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    os.close(lock_fd)
+                except:
+                    pass
     
     # If we get here, all retries failed
     print(f"ERROR: Failed to save population for generation {generation} after {max_retries} attempts")
