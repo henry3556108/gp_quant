@@ -4,11 +4,18 @@ Test script for diversity analysis module
 This script demonstrates how to use the diversity analysis module.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from gp_quant.diversity import DiversityAnalyzer
 from gp_quant.diversity.visualizer import DiversityVisualizer
 
-# Path to the individual records directory
-records_dir = "experiments_results/ABX_TO/individual_records_long_run01"
+# Path to the individual records directory (relative to project root)
+records_dir = str(project_root / "experiments_results/ABX_TO/individual_records_long_run01")
 
 print("="*80)
 print("🧪 Testing Diversity Analysis Module")

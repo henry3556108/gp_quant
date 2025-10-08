@@ -4,14 +4,21 @@ Test script for PnL correlation-based diversity analysis
 This script demonstrates how to calculate and visualize PnL diversity.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import pandas as pd
 from gp_quant.diversity import DiversityAnalyzer
 from gp_quant.diversity.visualizer import DiversityVisualizer
 
-# Configuration
-RECORDS_DIR = "experiments_results/ABX_TO/individual_records_long_run01"
+# Configuration (relative to project root)
+RECORDS_DIR = str(project_root / "experiments_results/ABX_TO/individual_records_long_run01")
 TICKER = "ABX.TO"
-DATA_FILE = f"TSE300_selected/{TICKER}.csv"
+DATA_FILE = str(project_root / f"TSE300_selected/{TICKER}.csv")
 
 # Backtest period (should match the experiment configuration)
 TRAIN_DATA_START = '1992-06-30'
@@ -47,7 +54,7 @@ print()
 
 # Step 4: Check if correlation matrices already exist
 import os
-correlation_summary_file = "correlation_matrices/correlation_summary.csv"
+correlation_summary_file = str(project_root / "correlation_matrices/correlation_summary.csv")
 
 if os.path.exists(correlation_summary_file):
     print("4. Loading pre-calculated correlation data...")
