@@ -66,6 +66,9 @@ def run_single_experiment(ticker, period_name,
     ticker_dir = f"experiments_results/{ticker.replace('.', '_')}"
     os.makedirs(ticker_dir, exist_ok=True)
     
+    # Determine period short name
+    period_short = 'short' if period_name == '短訓練期' else 'long'
+    
     # Prepare the final individual_records directory name
     individual_records_dir = f"{ticker_dir}/individual_records_{period_short}_run{run_number:02d}"
     
