@@ -16,12 +16,12 @@ class DiversityVisualizer:
     @staticmethod
     def plot_pnl_diversity(
         pnl_diversity_data: pd.DataFrame,
-        figsize: Tuple[int, int] = (12, 6),
+        figsize: Tuple[int, int] = (16, 6),
         save_path: Optional[str] = None,
         show: bool = True
     ):
         """
-        Plot PnL correlation diversity trends.
+        Plot PnL correlation diversity trends with boxplot.
         
         Args:
             pnl_diversity_data: DataFrame from DiversityAnalyzer.calculate_pnl_diversity_trends()
@@ -29,7 +29,7 @@ class DiversityVisualizer:
             save_path: Path to save the figure
             show: Whether to display the plot
         """
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=figsize)
         
         # Plot 1: Mean correlation
         ax1.plot(pnl_diversity_data['generation'], pnl_diversity_data['pnl_corr_mean'],
@@ -68,7 +68,58 @@ class DiversityVisualizer:
         ax2.grid(True, alpha=0.3, linestyle='--')
         ax2.legend(fontsize=9, loc='best')
         
-        plt.suptitle('PnL Correlation-based Diversity', fontsize=16, fontweight='bold', y=0.995)
+        # Plot 3: Boxplot showing distribution across generations
+        # Sample key generations for boxplot
+        key_generations = [0, 10, 20, 30, 40, 50]
+        available_gens = [g for g in key_generations if g in pnl_diversity_data['generation'].values]
+        
+        boxplot_data = []
+        labels = []
+        for gen in available_gens:
+            row = pnl_diversity_data[pnl_diversity_data['generation'] == gen].iloc[0]
+            # Create distribution from mean, std, min, max
+            mean = row['pnl_corr_mean']
+            std = row['pnl_corr_std']
+            min_val = row['pnl_corr_min']
+            max_val = row['pnl_corr_max']
+            median = row['pnl_corr_median']
+            
+            # Approximate distribution for boxplot
+            # Use quartiles based on mean and std
+            boxplot_data.append({
+                'med': median,
+                'q1': max(min_val, mean - 0.675 * std),  # ~25th percentile
+                'q3': min(max_val, mean + 0.675 * std),  # ~75th percentile
+                'whislo': min_val,
+                'whishi': max_val,
+                'mean': mean,
+                'fliers': []  # No outliers for now
+            })
+            labels.append(f'Gen {gen}')
+        
+        # Create boxplot
+        bp = ax3.bxp([boxplot_data[i] for i in range(len(boxplot_data))], 
+                     positions=range(len(available_gens)),
+                     widths=0.6,
+                     patch_artist=True,
+                     showmeans=True,
+                     meanprops=dict(marker='D', markerfacecolor='red', markersize=6))
+        
+        # Color the boxes
+        colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(available_gens)))
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+        
+        ax3.set_title('Correlation Distribution\n(Key Generations)', fontsize=13, fontweight='bold', pad=10)
+        ax3.set_xlabel('Generation', fontsize=11)
+        ax3.set_ylabel('Correlation Coefficient', fontsize=11)
+        ax3.set_xticks(range(len(available_gens)))
+        ax3.set_xticklabels(labels, rotation=45, ha='right')
+        ax3.grid(True, alpha=0.3, linestyle='--', axis='y')
+        ax3.axhline(y=0, color='gray', linestyle=':', alpha=0.5)
+        
+        plt.suptitle('PnL Correlation-based Diversity Analysis', fontsize=16, fontweight='bold', y=0.995)
         plt.tight_layout()
         
         if save_path:
