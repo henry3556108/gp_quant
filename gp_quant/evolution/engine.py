@@ -64,26 +64,51 @@ def ranked_selection(individuals, k, max_rank_fitness=1.8, min_rank_fitness=0.2)
 
     return chosen
 
-def save_population(population, generation, individual_records_dir):
+def save_population(population, generation, individual_records_dir, max_retries=3):
     """
-    Save the current population to a pickle file using dill.
+    Save the current population to a pickle file using dill with retry mechanism.
     
     Args:
         population: The population to save
         generation: The current generation number
         individual_records_dir: The base directory for saving populations
+        max_retries: Maximum number of retry attempts
     """
     if individual_records_dir is None:
         return
+    
+    import time
     
     # Create generation-specific directory
     gen_dir = os.path.join(individual_records_dir, f"generation_{generation:03d}")
     os.makedirs(gen_dir, exist_ok=True)
     
-    # Save population as pickle file using dill (handles lambda functions better)
     pickle_file = os.path.join(gen_dir, "population.pkl")
-    with open(pickle_file, 'wb') as f:
-        dill.dump(population, f)
+    
+    for attempt in range(max_retries):
+        try:
+            # Save population as pickle file using dill
+            with open(pickle_file, 'wb') as f:
+                dill.dump(population, f)
+                f.flush()  # Force write to disk
+                os.fsync(f.fileno())  # Ensure data is written to disk
+            
+            # Verify the file was written successfully
+            if os.path.exists(pickle_file) and os.path.getsize(pickle_file) > 0:
+                return  # Success!
+            else:
+                print(f"Warning: Generation {generation} - File written but empty (attempt {attempt+1}/{max_retries})")
+                
+        except Exception as e:
+            print(f"Warning: Failed to save population for generation {generation} (attempt {attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+            else:
+                import traceback
+                traceback.print_exc()
+    
+    # If we get here, all retries failed
+    print(f"ERROR: Failed to save population for generation {generation} after {max_retries} attempts")
 
 def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05, 
                   individual_records_dir: Optional[str] = None):
