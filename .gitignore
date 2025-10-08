@@ -208,6 +208,7 @@ logs/
 # Ignore all markdown files except specific ones
 *.md
 *.txt
+*.csv
 
 # But keep these important documentation files
 !README.md
