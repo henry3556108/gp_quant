@@ -22,81 +22,76 @@ class DiversityVisualizer:
         show: bool = True
     ):
         """
-        Plot diversity trends across generations.
+        Plot diversity trends across generations showing all 4 diversity categories.
         
         Args:
             diversity_data: DataFrame from DiversityAnalyzer.calculate_diversity_trends()
-            metrics: List of specific metrics to plot. If None, plots one key metric from each category.
+            metrics: Not used in default mode (kept for backward compatibility)
             figsize: Figure size (width, height)
             save_path: Path to save the figure. If None, doesn't save.
             show: Whether to display the plot
         """
-        if metrics is None:
-            # Default: one representative metric from each of the 4 categories
-            metrics = [
-                'structural_height_std',      # Structural Diversity
-                'genotypic_unique_ratio',     # Genotypic Diversity
-                'fitness_cv',                 # Fitness Diversity
-                'phenotypic_unique_primitives'  # Phenotypic Diversity
-            ]
+        # Create 2x2 grid for the 4 diversity categories
+        fig, axes = plt.subplots(2, 2, figsize=figsize)
+        axes = axes.flatten()
         
-        # Filter metrics that exist in the data
-        available_metrics = [m for m in metrics if m in diversity_data.columns]
+        # Define the 4 plots with their configurations
+        plot_configs = [
+            {
+                'title': '1. Structural Diversity',
+                'metrics': ['structural_height_std', 'structural_length_std'],
+                'labels': ['Tree Height Std', 'Tree Length Std'],
+                'colors': ['steelblue', 'darkorange'],
+                'ylabel': 'Standard Deviation'
+            },
+            {
+                'title': '2. Genotypic Diversity',
+                'metrics': ['genotypic_unique_ratio'],
+                'labels': ['Unique Individuals Ratio'],
+                'colors': ['forestgreen'],
+                'ylabel': 'Ratio'
+            },
+            {
+                'title': '3. Fitness Diversity',
+                'metrics': ['fitness_fitness_cv'],
+                'labels': ['Coefficient of Variation'],
+                'colors': ['crimson'],
+                'ylabel': 'CV (std/mean)'
+            },
+            {
+                'title': '4. Phenotypic Diversity',
+                'metrics': ['phenotypic_unique_primitives'],
+                'labels': ['Unique Primitives Count'],
+                'colors': ['purple'],
+                'ylabel': 'Count'
+            }
+        ]
         
-        if not available_metrics:
-            raise ValueError(f"None of the specified metrics found in data. Available: {list(diversity_data.columns)}")
-        
-        n_metrics = len(available_metrics)
-        
-        # Use 2x2 grid for 4 metrics (one from each category)
-        if n_metrics == 4:
-            n_rows, n_cols = 2, 2
-        else:
-            n_cols = 2
-            n_rows = (n_metrics + 1) // 2
-        
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
-        axes = axes.flatten() if n_metrics > 1 else [axes]
-        
-        # Category labels for the 4 default metrics
-        category_labels = {
-            'structural_height_std': 'Structural Diversity\n(Tree Height Std)',
-            'genotypic_unique_ratio': 'Genotypic Diversity\n(Unique Ratio)',
-            'fitness_cv': 'Fitness Diversity\n(Coefficient of Variation)',
-            'phenotypic_unique_primitives': 'Phenotypic Diversity\n(Unique Primitives)'
-        }
-        
-        for idx, metric in enumerate(available_metrics):
+        for idx, config in enumerate(plot_configs):
             ax = axes[idx]
             
-            # Plot the metric
-            ax.plot(diversity_data['generation'], diversity_data[metric], 
-                   linewidth=2.5, marker='o', markersize=5, alpha=0.8, color='steelblue')
+            # Plot each metric in this category
+            for metric, label, color in zip(config['metrics'], config['labels'], config['colors']):
+                if metric in diversity_data.columns:
+                    ax.plot(diversity_data['generation'], diversity_data[metric], 
+                           linewidth=2.5, marker='o', markersize=4, alpha=0.8, 
+                           color=color, label=label)
+                    
+                    # Add trend line
+                    z = np.polyfit(diversity_data['generation'], diversity_data[metric], 1)
+                    p = np.poly1d(z)
+                    trend_direction = '↗' if z[0] > 0 else '↘'
+                    ax.plot(diversity_data['generation'], p(diversity_data['generation']), 
+                           linestyle='--', alpha=0.5, linewidth=1.5, color=color)
             
             # Formatting
-            if metric in category_labels:
-                title = category_labels[metric]
-            else:
-                title = metric.replace('_', ' ').title()
-            
-            ax.set_title(title, fontsize=13, fontweight='bold', pad=10)
+            ax.set_title(config['title'], fontsize=13, fontweight='bold', pad=10)
             ax.set_xlabel('Generation', fontsize=11)
-            ax.set_ylabel('Value', fontsize=11)
+            ax.set_ylabel(config['ylabel'], fontsize=11)
             ax.grid(True, alpha=0.3, linestyle='--')
-            
-            # Add trend line
-            z = np.polyfit(diversity_data['generation'], diversity_data[metric], 1)
-            p = np.poly1d(z)
-            trend_direction = '↗' if z[0] > 0 else '↘'
-            ax.plot(diversity_data['generation'], p(diversity_data['generation']), 
-                   "r--", alpha=0.6, linewidth=2, label=f'Trend {trend_direction}')
             ax.legend(fontsize=9, loc='best')
         
-        # Hide unused subplots
-        for idx in range(len(available_metrics), len(axes)):
-            axes[idx].set_visible(False)
-        
-        plt.suptitle('Population Diversity Analysis: Four Key Metrics', 
+        plt.suptitle('Population Diversity Analysis: Four Categories', 
                     fontsize=16, fontweight='bold', y=0.995)
         plt.tight_layout()
         
