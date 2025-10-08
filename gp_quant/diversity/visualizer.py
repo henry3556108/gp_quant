@@ -53,10 +53,12 @@ class DiversityVisualizer:
             },
             {
                 'title': '3. Fitness Diversity',
-                'metrics': ['fitness_fitness_cv'],
-                'labels': ['Coefficient of Variation'],
-                'colors': ['crimson'],
-                'ylabel': 'CV (std/mean)'
+                'metrics': ['fitness_fitness_cv', 'fitness_fitness_mean'],
+                'labels': ['CV (Std/Mean)', 'Mean Fitness'],
+                'colors': ['crimson', 'darkred'],
+                'ylabel': 'CV',
+                'ylabel2': 'Mean Fitness',
+                'use_twin_axis': True  # Use secondary y-axis for different scales
             },
             {
                 'title': '4. Phenotypic Diversity',
@@ -70,26 +72,54 @@ class DiversityVisualizer:
         for idx, config in enumerate(plot_configs):
             ax = axes[idx]
             
+            # Check if we need twin axis (for metrics with very different scales)
+            use_twin = config.get('use_twin_axis', False) and len(config['metrics']) > 1
+            
             # Plot each metric in this category
-            for metric, label, color in zip(config['metrics'], config['labels'], config['colors']):
+            for metric_idx, (metric, label, color) in enumerate(zip(config['metrics'], config['labels'], config['colors'])):
                 if metric in diversity_data.columns:
-                    ax.plot(diversity_data['generation'], diversity_data[metric], 
+                    # Use secondary axis for second metric if needed
+                    if use_twin and metric_idx == 1:
+                        ax2 = ax.twinx()
+                        current_ax = ax2
+                        ax2.set_ylabel(label, fontsize=10, color=color)
+                        ax2.tick_params(axis='y', labelcolor=color)
+                    else:
+                        current_ax = ax
+                    
+                    current_ax.plot(diversity_data['generation'], diversity_data[metric], 
                            linewidth=2.5, marker='o', markersize=4, alpha=0.8, 
                            color=color, label=label)
                     
                     # Add trend line
                     z = np.polyfit(diversity_data['generation'], diversity_data[metric], 1)
                     p = np.poly1d(z)
-                    trend_direction = '↗' if z[0] > 0 else '↘'
-                    ax.plot(diversity_data['generation'], p(diversity_data['generation']), 
+                    current_ax.plot(diversity_data['generation'], p(diversity_data['generation']), 
                            linestyle='--', alpha=0.5, linewidth=1.5, color=color)
+                    
+                    if use_twin and metric_idx == 1:
+                        ax2.tick_params(axis='y', labelcolor=color)
             
             # Formatting
             ax.set_title(config['title'], fontsize=13, fontweight='bold', pad=10)
             ax.set_xlabel('Generation', fontsize=11)
-            ax.set_ylabel(config['ylabel'], fontsize=11)
+            
+            if use_twin and 'ylabel2' in config:
+                # Set different y-labels for twin axes
+                ax.set_ylabel(config['ylabel'], fontsize=11, color=config['colors'][0])
+                ax.tick_params(axis='y', labelcolor=config['colors'][0])
+            else:
+                ax.set_ylabel(config['ylabel'], fontsize=11)
+            
             ax.grid(True, alpha=0.3, linestyle='--')
-            ax.legend(fontsize=9, loc='best')
+            
+            # Add legend (combine both axes if using twin)
+            if use_twin:
+                lines1, labels1 = ax.get_legend_handles_labels()
+                lines2, labels2 = ax2.get_legend_handles_labels()
+                ax.legend(lines1 + lines2, labels1 + labels2, fontsize=9, loc='best')
+            else:
+                ax.legend(fontsize=9, loc='best')
         
         plt.suptitle('Population Diversity Analysis: Four Categories', 
                     fontsize=16, fontweight='bold', y=0.995)
