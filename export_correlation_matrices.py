@@ -26,7 +26,7 @@ DATA_FILE = f"TSE300_selected/{TICKER}.csv"
 BACKTEST_START = '1993-07-02'
 BACKTEST_END = '1999-06-25'
 OUTPUT_DIR = "correlation_matrices"
-SAMPLE_SIZE = 50  # Sample size per generation
+SAMPLE_SIZE = 200  # Sample size per generation
 
 # Create output directory
 os.makedirs(OUTPUT_DIR, exist_ok=True)

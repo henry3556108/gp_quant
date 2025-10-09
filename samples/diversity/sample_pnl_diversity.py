@@ -26,7 +26,7 @@ TRAIN_BACKTEST_START = '1993-07-02'
 TRAIN_BACKTEST_END = '1999-06-25'
 
 # Sampling configuration (for performance)
-SAMPLE_SIZE = 50  # Sample 50 individuals per generation instead of all 500
+SAMPLE_SIZE = 500  # Sample 50 individuals per generation instead of all 500
 
 print("="*80)
 print("🧪 Testing PnL Correlation-based Diversity Analysis")
