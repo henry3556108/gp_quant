@@ -206,7 +206,7 @@ logs/
 # ============================================================================
 
 # Ignore all markdown files except specific ones
-*.md
+# *.md
 *.txt
 *.csv
 

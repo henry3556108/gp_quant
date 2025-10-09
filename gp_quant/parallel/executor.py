@@ -6,7 +6,7 @@ for managing concurrent tasks with proper resource allocation.
 """
 
 import concurrent.futures
-from typing import Callable, Any, Optional, List, Tuple
+from typing import Callable, Any, Optional, List, Tuple, Dict
 import logging
 import time
 
