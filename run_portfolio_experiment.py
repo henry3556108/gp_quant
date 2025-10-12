@@ -1,10 +1,11 @@
 """
-Phase 1: Portfolio-Based GP Evolution Experiment
+Phase 1: Portfolio-Based GP Evolution Experiment (with Norm Operator)
 
 多股票組合的 GP 演化實驗
 - 使用 PortfolioBacktestingEngine 同時評估多個股票
+- 包含新實作的 Norm operator
 - 儲存每個 generation 的族群快照
-- 500 個體，50 代演化
+- 5000 個體，50 代演化（大規模實驗）
 """
 
 import sys
@@ -52,8 +53,8 @@ def main():
         'initial_capital': 100000.0,
         
         # GP 參數
-        'population_size': 1000,
-        'generations': 10,
+        'population_size': 5000,
+        'generations': 50,
         
         # 演化參數
         'crossover_prob': 0.8,
