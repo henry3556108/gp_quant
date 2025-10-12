@@ -32,7 +32,8 @@ class PortfolioBacktestingEngine:
                  data: Dict[str, pd.DataFrame],
                  backtest_start: str,
                  backtest_end: str,
-                 initial_capital: float = 100000.0):
+                 initial_capital: float = 100000.0,
+                 pset=None):
         """
         Initialize portfolio backtesting engine.
         
@@ -42,6 +43,7 @@ class PortfolioBacktestingEngine:
             backtest_start: Start date for backtesting (YYYY-MM-DD)
             backtest_end: End date for backtesting (YYYY-MM-DD)
             initial_capital: Initial portfolio capital
+            pset: DEAP primitive set (optional, will import default if None)
             
         Example:
             data = {
@@ -55,6 +57,16 @@ class PortfolioBacktestingEngine:
         self.backtest_start = pd.to_datetime(backtest_start)
         self.backtest_end = pd.to_datetime(backtest_end)
         self.initial_capital = initial_capital
+        
+        # Store or import pset and make a deep copy
+        # This is CRITICAL: we need our own copy to avoid race conditions
+        # and to properly set terminal values
+        import copy
+        if pset is None:
+            from gp_quant.gp.operators import pset as default_pset
+            self.pset = copy.deepcopy(default_pset)
+        else:
+            self.pset = copy.deepcopy(pset)
         
         # Validate and prepare data
         self._validate_data()
@@ -92,6 +104,12 @@ class PortfolioBacktestingEngine:
             
             if len(filtered_df) == 0:
                 raise ValueError(f"{ticker}: No data in backtest period")
+            
+            # Drop rows with NaN values (holidays, missing data)
+            filtered_df = filtered_df.dropna()
+            
+            if len(filtered_df) == 0:
+                raise ValueError(f"{ticker}: No valid data after removing NaN")
             
             self.backtest_data[ticker] = filtered_df
         
@@ -180,48 +198,72 @@ class PortfolioBacktestingEngine:
             Dict mapping ticker to {date: signal} dict
         """
         from deap import gp
+        from gp_quant.gp.operators import NumVector
         
         signals = {}
         
         for ticker in self.tickers:
             df = self.backtest_data[ticker]
-            ticker_signals = {}
             
-            # Compile the individual into a callable function
-            func = gp.compile(expr=individual, pset=self._get_pset())
+            # Prepare price and volume vectors
+            price_vec = df['Close'].values.astype(float)
+            volume_vec = df['Volume'].values.astype(float)
             
-            for date in self.common_dates:
-                if date not in df.index:
-                    ticker_signals[date] = 0
-                    continue
+            # Convert to NumVector type
+            price_vec = price_vec.view(NumVector)
+            volume_vec = volume_vec.view(NumVector)
+            
+            try:
+                # Set terminal values BEFORE compiling (like BacktestingEngine does)
+                self.pset.terminals[NumVector][0].value = price_vec
+                self.pset.terminals[NumVector][1].value = volume_vec
                 
-                row = df.loc[date]
+                # Compile the individual
+                func = gp.compile(expr=individual, pset=self.pset)
                 
+                # Execute - try without arguments first
                 try:
-                    # Evaluate the GP tree with current market data
-                    # Note: This assumes the GP tree uses specific terminal names
-                    # You may need to adjust based on your primitive set
-                    signal = func(
-                        row['Open'],
-                        row['High'],
-                        row['Low'],
-                        row['Close'],
-                        row['Volume']
-                    )
-                    
-                    # Convert to trading signal (-1, 0, 1)
-                    if signal > 0:
-                        ticker_signals[date] = 1  # Buy
-                    elif signal < 0:
-                        ticker_signals[date] = -1  # Sell
+                    signal_vector = func()
+                except TypeError as e:
+                    # If it needs arguments, provide them
+                    if "missing" in str(e) and "required positional arguments" in str(e):
+                        signal_vector = func(price_vec, volume_vec)
                     else:
-                        ticker_signals[date] = 0  # Hold
-                        
-                except Exception as e:
-                    # If evaluation fails, hold
-                    ticker_signals[date] = 0
-            
-            signals[ticker] = ticker_signals
+                        raise
+                
+                # Handle single boolean return
+                if not isinstance(signal_vector, np.ndarray):
+                    signal_vector = np.full(len(price_vec), signal_vector, dtype=bool)
+                
+                # Convert boolean vector to trading signals
+                ticker_signals = {}
+                for i, date in enumerate(df.index):
+                    if date in self.common_dates:
+                        # True = Buy, False = Sell/Hold
+                        # We need to detect transitions
+                        if i == 0:
+                            # First day: buy if signal is True
+                            ticker_signals[date] = 1 if signal_vector[i] else 0
+                        else:
+                            prev_signal = signal_vector[i-1]
+                            curr_signal = signal_vector[i]
+                            
+                            if not prev_signal and curr_signal:
+                                # Transition from False to True: Buy
+                                ticker_signals[date] = 1
+                            elif prev_signal and not curr_signal:
+                                # Transition from True to False: Sell
+                                ticker_signals[date] = -1
+                            else:
+                                # No transition: Hold
+                                ticker_signals[date] = 0
+                
+                signals[ticker] = ticker_signals
+                
+            except Exception as e:
+                # If evaluation fails, no signals
+                ticker_signals = {date: 0 for date in self.common_dates}
+                signals[ticker] = ticker_signals
         
         return signals
     
@@ -229,13 +271,8 @@ class PortfolioBacktestingEngine:
         """
         Get primitive set for GP compilation.
         This should match the primitive set used in evolution.
-        
-        Note: This is a placeholder. You should import the actual pset
-        from your GP configuration.
         """
-        # TODO: Import from gp_quant.gp.primitives
-        # For now, return None and handle in _generate_signals_for_all_stocks
-        return None
+        return self.pset
     
     def _calculate_per_stock_pnl(self) -> Dict[str, float]:
         """Calculate PnL contribution per stock"""
