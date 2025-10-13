@@ -107,6 +107,56 @@ def calculate_buy_and_hold(trades_file, initial_capital_per_stock=25000.0):
     
     return common_dates, total_pnl
 
+def calculate_sharpe_ratio(pnl_series, dates, risk_free_rate=0.0, initial_capital=100000.0):
+    """
+    計算 Sharpe Ratio
+    
+    Args:
+        pnl_series: PnL 序列
+        dates: 日期序列
+        risk_free_rate: 無風險利率（年化）
+        initial_capital: 初始資金
+    
+    Returns:
+        Sharpe Ratio
+    """
+    if len(pnl_series) < 2:
+        return 0.0
+    
+    # 計算每日回報率
+    daily_returns = []
+    for i in range(1, len(pnl_series)):
+        # 計算資產價值 = 初始資金 + PnL
+        prev_value = initial_capital + pnl_series[i-1]
+        curr_value = initial_capital + pnl_series[i]
+        
+        if prev_value > 0:
+            ret = (curr_value - prev_value) / prev_value
+        else:
+            ret = 0.0
+        daily_returns.append(ret)
+    
+    if len(daily_returns) == 0:
+        return 0.0
+    
+    # 過濾掉 nan 和 inf
+    daily_returns = [r for r in daily_returns if np.isfinite(r)]
+    
+    if len(daily_returns) == 0:
+        return 0.0
+    
+    # 計算平均回報和標準差
+    mean_return = np.mean(daily_returns)
+    std_return = np.std(daily_returns, ddof=1)
+    
+    if std_return == 0 or not np.isfinite(std_return):
+        return 0.0
+    
+    # 年化 Sharpe Ratio (假設 252 個交易日)
+    sharpe = (mean_return * 252 - risk_free_rate) / (std_return * np.sqrt(252))
+    
+    return sharpe if np.isfinite(sharpe) else 0.0
+
 def plot_portfolio_performance(ax, trades_file, title):
     """
     繪製組合績效圖
@@ -227,11 +277,17 @@ def plot_portfolio_performance(ax, trades_file, title):
     # 旋轉 x 軸標籤
     ax.tick_params(axis='x', rotation=45)
     
+    # 計算 Sharpe Ratio
+    gp_sharpe = calculate_sharpe_ratio(total_pnl, all_dates)
+    bh_sharpe = calculate_sharpe_ratio(bh_pnl, bh_dates) if len(bh_pnl) > 0 else 0.0
+    
     # 返回統計信息
     stats = {
         'gp_final_pnl': total_pnl[-1] if total_pnl else 0,
         'bh_final_pnl': bh_pnl[-1] if bh_pnl else 0,
         'excess_return': (total_pnl[-1] - bh_pnl[-1]) if (total_pnl and bh_pnl) else 0,
+        'gp_sharpe': gp_sharpe,
+        'bh_sharpe': bh_sharpe,
         'stock_pnl': {ticker: stock_pnl[ticker]['pnl'][-1] 
                      for ticker in sorted(tickers) 
                      if ticker in stock_pnl and len(stock_pnl[ticker]['pnl']) > 0}
@@ -241,7 +297,7 @@ def plot_portfolio_performance(ax, trades_file, title):
 
 def main():
     # 設置路徑
-    exp_dir = Path('portfolio_experiment_results/portfolio_exp_20251009_184409')
+    exp_dir = Path('portfolio_experiment_results/portfolio_exp_20251012_181959')
     
     train_trades = exp_dir / 'best_individual_train_trades.csv'
     test_trades = exp_dir / 'best_individual_test_trades.csv'
@@ -273,7 +329,9 @@ def main():
     
     print(f"\n訓練期統計:")
     print(f"  GP 策略最終 PnL: ${train_stats['gp_final_pnl']:,.2f}")
+    print(f"  GP 策略 Sharpe Ratio: {train_stats['gp_sharpe']:.4f}")
     print(f"  Buy-and-Hold PnL: ${train_stats['bh_final_pnl']:,.2f}")
+    print(f"  Buy-and-Hold Sharpe Ratio: {train_stats['bh_sharpe']:.4f}")
     print(f"  超額回報: ${train_stats['excess_return']:,.2f}")
     for ticker, pnl in train_stats['stock_pnl'].items():
         print(f"  {ticker} PnL: ${pnl:,.2f}")
@@ -289,7 +347,9 @@ def main():
     
     print(f"\n測試期統計:")
     print(f"  GP 策略最終 PnL: ${test_stats['gp_final_pnl']:,.2f}")
+    print(f"  GP 策略 Sharpe Ratio: {test_stats['gp_sharpe']:.4f}")
     print(f"  Buy-and-Hold PnL: ${test_stats['bh_final_pnl']:,.2f}")
+    print(f"  Buy-and-Hold Sharpe Ratio: {test_stats['bh_sharpe']:.4f}")
     print(f"  超額回報: ${test_stats['excess_return']:,.2f}")
     for ticker, pnl in test_stats['stock_pnl'].items():
         print(f"  {ticker} PnL: ${pnl:,.2f}")
@@ -315,12 +375,14 @@ def main():
     print()
     
     # 顯示比較
-    print("📊 訓練期 vs 測試期比較:")
-    print(f"  {'指標':<25} {'訓練期':>15} {'測試期':>15} {'差異':>15}")
-    print(f"  {'-'*25} {'-'*15} {'-'*15} {'-'*15}")
-    print(f"  {'GP 策略 PnL':<25} ${train_stats['gp_final_pnl']:>14,.2f} ${test_stats['gp_final_pnl']:>14,.2f} ${test_stats['gp_final_pnl']-train_stats['gp_final_pnl']:>+14,.2f}")
-    print(f"  {'Buy-and-Hold PnL':<25} ${train_stats['bh_final_pnl']:>14,.2f} ${test_stats['bh_final_pnl']:>14,.2f} ${test_stats['bh_final_pnl']-train_stats['bh_final_pnl']:>+14,.2f}")
-    print(f"  {'超額回報':<25} ${train_stats['excess_return']:>14,.2f} ${test_stats['excess_return']:>14,.2f} ${test_stats['excess_return']-train_stats['excess_return']:>+14,.2f}")
+    print(f"\n📊 訓練期 vs 測試期比較:")
+    print(f"  {'指標':<30} {'訓練期':>15} {'測試期':>15} {'差異':>15}")
+    print(f"  {'-'*30} {'-'*15} {'-'*15} {'-'*15}")
+    print(f"  {'GP 策略 PnL':<30} ${train_stats['gp_final_pnl']:>14,.2f} ${test_stats['gp_final_pnl']:>14,.2f} ${test_stats['gp_final_pnl'] - train_stats['gp_final_pnl']:>+14,.2f}")
+    print(f"  {'GP 策略 Sharpe Ratio':<30} {train_stats['gp_sharpe']:>15.4f} {test_stats['gp_sharpe']:>15.4f} {test_stats['gp_sharpe'] - train_stats['gp_sharpe']:>+15.4f}")
+    print(f"  {'Buy-and-Hold PnL':<30} ${train_stats['bh_final_pnl']:>14,.2f} ${test_stats['bh_final_pnl']:>14,.2f} ${test_stats['bh_final_pnl'] - train_stats['bh_final_pnl']:>+14,.2f}")
+    print(f"  {'Buy-and-Hold Sharpe Ratio':<30} {train_stats['bh_sharpe']:>15.4f} {test_stats['bh_sharpe']:>15.4f} {test_stats['bh_sharpe'] - train_stats['bh_sharpe']:>+15.4f}")
+    print(f"  {'超額回報':<30} ${train_stats['excess_return']:>14,.2f} ${test_stats['excess_return']:>14,.2f} ${test_stats['excess_return'] - train_stats['excess_return']:>+14,.2f}")
     print()
 
 if __name__ == '__main__':

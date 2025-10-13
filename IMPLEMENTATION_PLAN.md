@@ -1,8 +1,8 @@
 # 多股票組合評估與 Niching 策略實作計畫
 
-**版本**: 1.2  
-**日期**: 2025-10-12  
-**狀態**: Phase 1 完成，Phase 2 進行中  
+**版本**: 1.3  
+**日期**: 2025-10-13  
+**狀態**: Phase 1 完成，Phase 2.0 完成，Phase 2.1 (Fitness 改進) 進行中  
 **預估時程**: 4-6 週
 
 ---
@@ -66,7 +66,10 @@
 - 計算每檔股票的 PnL
 - 計算組合總 PnL = Σ(PnL_i)
 - 計算組合 Sharpe Ratio, Max Drawdown 等指標
-- Fitness = 組合的 Excess Return
+- Fitness = 可配置選擇：
+  - `excess_return`: 組合的 Excess Return（原論文方法）
+  - `sharpe_ratio`: 組合的 Sharpe Ratio（風險調整回報）
+  - `avg_sharpe`: 各股票 Sharpe Ratio 的平均值
 
 **FR1.4 向後兼容**
 - 保留單股票評估模式
@@ -1442,6 +1445,163 @@ pool.apply_async(task, error_callback=error_callback)
 
 ---
 
+## Phase 2.1: Fitness Function 改進 (Sharpe Ratio)
+
+### 背景與動機
+
+**問題**: 當前系統使用 Excess Return 作為 fitness，未考慮風險因素，可能導致：
+- 演化出高回報但高波動的策略
+- 過度擬合訓練數據
+- 測試期表現不穩定
+
+**解決方案**: 引入 Sharpe Ratio 作為可選的 fitness metric
+- 風險調整回報 = 回報 / 波動性
+- 鼓勵演化出更穩健的策略
+- 符合現代投資組合理論
+
+**實作方案**: 方案 B（雙軌並行）
+- 保留 `excess_return` 作為 baseline
+- 新增 `sharpe_ratio` 作為改進方案
+- 通過配置參數切換
+- 進行對比實驗
+
+### 技術規格
+
+#### 1. Sharpe Ratio 計算
+
+**公式**:
+```
+Sharpe Ratio = (年化平均回報 - 無風險利率) / 年化波動率
+             = (mean(daily_returns) * 252 - rf) / (std(daily_returns) * sqrt(252))
+```
+
+**實作要點**:
+- 基於每日權益曲線計算日回報率
+- 過濾 NaN 和 Inf 值
+- 處理零波動情況
+- 年化假設 252 個交易日
+
+#### 2. 邊界情況處理
+
+| 情況 | 處理方式 | Fitness 值 |
+|------|---------|-----------|
+| 無任何交易記錄 | 返回中性 fitness | 0.0 |
+| 權益曲線長度 < 2 | 無法計算回報 | 0.0 |
+| 標準差 = 0 | 零波動（完全不交易） | 0.0 |
+| Sharpe > 10 或 < -10 | 異常值 | -100000.0 (penalty) |
+| NaN 或 Inf | 數值錯誤 | -100000.0 (penalty) |
+
+**設計原則**:
+- 無交易策略不應獲得懲罰（fitness = 0）
+- 異常策略給予大懲罰（fitness = -100000）
+- 保持與現有 penalty 機制一致
+
+#### 3. 修改範圍
+
+**檔案 1**: `gp_quant/backtesting/engine.py`
+```python
+class BacktestingEngine:
+    def evaluate(self, individual, fitness_metric='excess_return'):
+        # 新增 fitness_metric 參數
+        
+    def _calculate_sharpe_ratio(self, signals, data, risk_free_rate=0.0):
+        # 新增方法：計算 Sharpe Ratio
+        
+    def _run_simulation_with_equity_curve(self, signals, data):
+        # 新增方法：返回每日權益曲線
+```
+
+**檔案 2**: `gp_quant/backtesting/portfolio_engine.py`
+```python
+class PortfolioBacktestingEngine:
+    def evaluate(self, individual, fitness_metric='excess_return'):
+        # 支援三種模式：
+        # - 'excess_return': sum of excess returns
+        # - 'sharpe_ratio': portfolio-level Sharpe
+        # - 'avg_sharpe': average of individual Sharpes
+```
+
+**檔案 3**: `run_portfolio_experiment.py`
+```python
+CONFIG = {
+    'fitness_metric': 'sharpe_ratio',  # 新增配置
+    'risk_free_rate': 0.0,             # 新增配置
+}
+```
+
+#### 4. 配置參數
+
+| 參數 | 類型 | 預設值 | 說明 |
+|------|------|--------|------|
+| `fitness_metric` | str | 'excess_return' | 'excess_return', 'sharpe_ratio', 'avg_sharpe' |
+| `risk_free_rate` | float | 0.0 | 年化無風險利率 |
+| `min_trades_for_sharpe` | int | 2 | 計算 Sharpe 所需最少交易數 |
+
+### 實驗設計
+
+#### Baseline Experiment (已完成)
+- Fitness: Excess Return
+- Population: 5000
+- Generations: 50
+- 結果: 訓練期 Sharpe = 3.48, 測試期 Sharpe = 1.66
+
+#### Proposed Experiment (待執行)
+- Fitness: Sharpe Ratio
+- Population: 5000
+- Generations: 50
+- 預期: 測試期 Sharpe 更穩定，過度擬合減少
+
+#### 比較指標
+1. **樣本內表現**
+   - Excess Return
+   - Sharpe Ratio
+   - Max Drawdown
+
+2. **樣本外表現** (關鍵)
+   - Excess Return
+   - Sharpe Ratio
+   - Max Drawdown
+   - Win Rate
+
+3. **泛化能力**
+   - 樣本內外 Sharpe 差異
+   - 樣本內外 Excess Return 差異
+
+### 預期成果
+
+1. **更穩健的策略**
+   - 測試期 Sharpe Ratio 更高
+   - 波動性更低
+   - 回撤更小
+
+2. **更好的泛化**
+   - 樣本內外表現差距縮小
+   - 減少過度擬合
+
+3. **學術貢獻**
+   - 改進原論文方法
+   - 提供對比實驗數據
+   - 驗證風險調整 fitness 的效果
+
+### 時程
+
+- **實作**: 2 小時
+- **測試**: 1 小時
+- **實驗運行**: 12-15 小時
+- **分析**: 2 小時
+- **總計**: 1 天
+
+### 風險與緩解
+
+| 風險 | 影響 | 緩解措施 |
+|------|------|---------|
+| Sharpe 計算錯誤 | 高 | 單元測試驗證 |
+| 演化速度變慢 | 中 | 性能測試，優化計算 |
+| 結果不如預期 | 低 | 保留 baseline，可回退 |
+| 邊界情況未處理 | 中 | 詳細的邊界測試 |
+
+---
+
 ## 變更歷史
 
 | 版本 | 日期 | 作者 | 變更內容 |
@@ -1449,6 +1609,7 @@ pool.apply_async(task, error_callback=error_callback)
 | 1.0 | 2025-10-09 | Cascade | 初版完成 |
 | 1.1 | 2025-10-09 | Cascade | 更新為完全並行化架構（方案 F），支援 Population 5000+ |
 | 1.2 | 2025-10-12 | Cascade | 更新 Phase 1 完成狀態，新增 Norm operator 任務，調整時程 |
+| 1.3 | 2025-10-13 | Cascade | 新增 Phase 2.1: Fitness Function 改進（Sharpe Ratio），採用方案 B（雙軌並行） |
 
 ---
 

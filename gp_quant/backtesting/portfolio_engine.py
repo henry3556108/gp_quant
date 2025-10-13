@@ -284,18 +284,56 @@ class PortfolioBacktestingEngine:
         
         return per_stock_pnl
     
-    def get_fitness(self, individual: Any) -> float:
+    def get_fitness(self, individual: Any, fitness_metric: str = 'excess_return') -> float:
         """
         Calculate fitness score for an individual.
         
         Args:
             individual: DEAP individual
+            fitness_metric: 'excess_return' or 'sharpe_ratio'
             
         Returns:
-            Fitness score (excess return)
+            Fitness score
         """
-        result = self.backtest(individual)
-        return result['metrics']['excess_return']
+        if fitness_metric == 'sharpe_ratio':
+            # Calculate Sharpe Ratio from equity curve
+            result = self.backtest(individual)
+            equity_curve = result['equity_curve']
+            
+            # Edge case: insufficient data
+            if len(equity_curve) < 2:
+                return 0.0
+            
+            # Calculate returns
+            returns = equity_curve.pct_change().dropna()
+            
+            if len(returns) == 0:
+                return 0.0
+            
+            # Filter NaN and Inf
+            returns = returns[np.isfinite(returns)]
+            
+            if len(returns) == 0:
+                return 0.0
+            
+            # Calculate Sharpe
+            mean_return = returns.mean()
+            std_return = returns.std()
+            
+            if std_return == 0 or not np.isfinite(std_return):
+                return 0.0
+            
+            sharpe = (mean_return * 252) / (std_return * np.sqrt(252))
+            
+            # Sanity check
+            if not np.isfinite(sharpe) or sharpe > 10 or sharpe < -10:
+                return -100000.0
+            
+            return sharpe
+        else:
+            # Default: excess return
+            result = self.backtest(individual)
+            return result['metrics']['excess_return']
     
     def get_pnl_curve(self, individual: Any) -> pd.Series:
         """

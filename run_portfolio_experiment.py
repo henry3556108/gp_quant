@@ -61,9 +61,13 @@ def main():
         'mutation_prob': 0.2,
         'tournament_size': 3,
         
+        # Fitness 計算方式
+        'fitness_metric': 'sharpe_ratio',  # 'excess_return', 'sharpe_ratio', 'avg_sharpe'
+        'risk_free_rate': 0.0,  # 年化無風險利率
+        
         # 輸出目錄
         'output_dir': 'portfolio_experiment_results',
-        'experiment_name': f'portfolio_exp_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+        'experiment_name': f'portfolio_exp_sharpe_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
     }
     
     print("📋 實驗配置:")
@@ -77,6 +81,7 @@ def main():
     print(f"\n  初始資金: ${CONFIG['initial_capital']:,.0f}")
     print(f"  族群大小: {CONFIG['population_size']}")
     print(f"  演化世代: {CONFIG['generations']}")
+    print(f"  Fitness 指標: {CONFIG['fitness_metric']}")
     print()
     
     # ============================================================================
@@ -195,7 +200,7 @@ def main():
     def evaluate_individual(individual):
         """評估單個個體的 fitness（訓練期）"""
         try:
-            fitness = train_engine.get_fitness(individual)
+            fitness = train_engine.get_fitness(individual, fitness_metric=CONFIG['fitness_metric'])
             return (fitness,)
         except Exception as e:
             return (-1000000.0,)
