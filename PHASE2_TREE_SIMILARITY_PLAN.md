@@ -385,3 +385,106 @@ similarity = 1 / (1 + distance)
 ---
 
 **準備開始實作！** 🚀
+
+
+
+受限樹編輯距離 (Constrained TED) 實作參考指南本文件旨在提供實作 Kaizhong Zhang 論文中所述「受限樹編輯距離」演算法的技術細節與偽代碼。演算法的核心是利用動態規劃，並巧妙地將「森林與森林」的匹配問題簡化為「字串與字串」的編輯距離問題。1. 核心概念在開始實作前，請先理解以下幾個核心概念：有序標籤樹 (Ordered Labeled Trees)：一種樹狀結構，其中每個節點都有一個標籤 (label)，且兄弟節點之間的從左到右順序是固定的、有意義的。編輯操作 (Edit Operations)：將一棵樹 T₁ 轉換為另一棵樹 T₂ 所需的基本操作。每種操作都伴隨一個非負的成本 (cost)：relabel(a, b)：將標籤為 a 的節點改為標籤 b。成本為 γ(a → b)。delete(a)：刪除一個標籤為 a 的節點。成本為 γ(a → λ)。insert(b)：插入一個標籤為 b 的節點。成本為 γ(λ → b)。森林 (Forest)：一個有序的樹的集合。對於一個節點 t，它的所有子節點構成的子樹集合，就是根植於 t 的森林。受限編輯映射 (Constrained Editing Mapping)：這是本演算法與傳統樹編輯距離 (如 Tai's algorithm) 的最大區別。它對節點之間的配對施加了更嚴格的結構性約束，確保分離的子樹只能映射到分離的子樹，從而避免了某些不符合直覺的結構扭曲。2. 演算法邏輯：動態規劃演算法使用動態規劃，以「後序遍歷 (post-order traversal)」的方式計算所有可能的子樹配對 (T₁[i], T₂[j]) 之間的距離。這確保了在計算父節點的距離時，其所有子節點的距離都已經被計算出來。對於 T₁ 中的每一個節點 i 和 T₂ 中的每一個節點 j，我們需要計算兩個值：D(F₁[i], F₂[j])：根植於 i 的森林與根植於 j 的森林之間的距離。D(T₁[i], T₂[j])：以 i 為根的子樹與以 j 為根的子樹之間的距離。關鍵洞察：森林距離 ↔ 字串距離計算 D(F₁[i], F₂[j]) 是演算法的核心。F₁[i] 是由 i 的 m 個子樹構成的森林，F₂[j] 是由 j 的 n 個子樹構成的森林。演算法證明，計算這兩片森林之間的距離，等價於計算兩個長度為 m 和 n 的字串之間的編輯距離。字串 A: A = c₁ c₂ ... cₘ，其中 cₖ 代表 i 的第 k 個子樹。字串 B: B = d₁ d₂ ... dₙ，其中 dₗ 代表 j 的第 l 個子樹。計算此字串編輯距離時的操作成本定義如下：替換成本: γ(cₖ → dₗ) = D(T₁[cₖ], T₂[dₗ]) (兩棵子樹的距離)。刪除成本: γ(cₖ → λ) = D(T₁[cₖ], θ) (刪除一整棵子樹的成本)。插入成本: γ(λ → dₗ) = D(θ, T₂[dₗ]) (插入一整棵子樹的成本)。3. 偽代碼 (Pseudocode)以下是演算法的詳細偽代碼。// 主函式：計算兩棵樹 T₁ 和 T₂ 之間的受限編輯距離
+function ConstrainedTED(T₁, T₂)
+    // 使用後序遍歷順序取得 T₁ 和 T₂ 的節點列表
+    nodes₁ = postOrderTraversal(T₁)
+    nodes₂ = postOrderTraversal(T₂)
+
+    // 建立一個二維陣列來儲存子樹間的距離
+    // D_tree[i][j] = D(T₁[i], T₂[j])
+    // D_forest[i][j] = D(F₁[i], F₂[j])
+    let D_tree[|T₁|+1][|T₂|+1]
+    let D_forest[|T₁|+1][|T₂|+1]
+
+    // 初始化：計算刪除/插入所有子樹的成本
+    for each node i in nodes₁
+        // 刪除 T₁[i] 的成本 = 刪除其根節點 + 刪除其森林
+        cost_del_forest = 0
+        for each child c of i
+            cost_del_forest += D_tree[c][0]
+        D_forest[i][0] = cost_del_forest
+        D_tree[i][0] = D_forest[i][0] + γ(label(i) → λ)
+
+    for each node j in nodes₂
+        // 插入 T₂[j] 的成本 = 插入其根節點 + 插入其森林
+        cost_ins_forest = 0
+        for each child c of j
+            cost_ins_forest += D_tree[0][c]
+        D_forest[0][j] = cost_ins_forest
+        D_tree[0][j] = D_forest[0][j] + γ(λ → label(j))
+
+    // 主要的動態規劃迴圈
+    for each node i in nodes₁
+        for each node j in nodes₂
+            // --- 步驟 1: 計算森林距離 D(F₁[i], F₂[j]) ---
+            children₁ = childrenOf(i)
+            children₂ = childrenOf(j)
+            
+            // 將森林距離計算簡化為字串編輯距離
+            m = length(children₁)
+            n = length(children₂)
+            
+            // E[s][t] 是 F₁[i] 的前 s 個子樹與 F₂[j] 的前 t 個子樹的距離
+            let E[m+1][n+1]
+            E[0][0] = 0
+            
+            // 初始化字串編輯距離的邊界條件
+            for s from 1 to m
+                E[s][0] = E[s-1][0] + D_tree[children₁[s]][0] // 刪除子樹
+            for t from 1 to n
+                E[0][t] = E[0][t-1] + D_tree[0][children₂[t]] // 插入子樹
+
+            // 計算字串編輯距離
+            for s from 1 to m
+                for t from 1 to n
+                    cost_replace = E[s-1][t-1] + D_tree[children₁[s]][children₂[t]]
+                    cost_delete = E[s-1][t] + D_tree[children₁[s]][0]
+                    cost_insert = E[s][t-1] + D_tree[0][children₂[t]]
+                    E[s][t] = min(cost_replace, cost_delete, cost_insert)
+
+            // 根據論文 Lemma 7，森林距離是三種情況的最小值
+            // 情況1 & 2: 較複雜的映射，這裡為簡化偽代碼，先忽略，
+            //            因為在許多應用中，情況3已足夠。
+            //            完整的實作需要處理整個森林映射到對方單一子樹中的情況。
+            // 情況3: 一般情況，由字串編輯距離 E[m][n] 給出。
+            D_forest[i][j] = E[m][n] // 簡化版，但在多數情況下是主要成本
+
+            // --- 步驟 2: 計算樹距離 D(T₁[i], T₂[j]) ---
+            // 根據論文 Lemma 4，樹距離是三種操作的最小值
+            // 1. i 映射到 j (重新標籤)
+            cost_relabel = D_forest[i][j] + γ(label(i) → label(j))
+            // 2. i 被刪除
+            cost_delete = D_tree[i][0] + D(F₁[i] mapped to T₂[j]) // 較複雜
+            // 3. j 被插入
+            cost_insert = D_tree[0][j] + D(T₁[i] mapped to F₂[j]) // 較複雜
+
+            // 簡化後的公式（最常見的情況）
+            // 完整版需要考慮一個節點映射到另一個節點的子孫
+            D_tree[i][j] = min(
+                cost_relabel,
+                D_tree[i][0] + D_tree[0][j] - γ(label(i)→λ) - γ(λ→label(j)), // i 刪除, j 插入
+                ... // 其他複雜情況
+            )
+            // 根據論文，最核心的遞迴是：
+            D_tree[i][j] = min(
+                D_tree[i-1][j] + γ(label(i) → λ), // 刪除 T₁[i] 的根
+                D_tree[i][j-1] + γ(λ → label(j)), // 插入 T₂[j] 的根
+                D_forest[i][j] + γ(label(i) → label(j)) // 替換根
+            )
+            // 注意：上述 i-1, j-1 僅為示意，實際應使用 key-root 節點。
+            // 更精確的表達應基於論文公式。
+            // 實際上的遞迴關係更接近於：
+            // D(T₁[i], T₂[j]) = min( D(T₁[i], θ) + ..., D(θ, T₂[j]) + ..., D(F₁[i],F₂[j]) + γ(t₁[i]→t₂[j]) )
+            // 為求簡潔，我們只展示最核心的替換部分：
+            D_tree[i][j] = D_forest[i][j] + γ(label(i) → label(j))
+
+
+    // 返回整棵樹的距離，即兩棵樹根節點之間的距離
+    return D_tree[root(T₁)][root(T₂)]
+
+end function
+4. 複雜度分析時間複雜度: 。主迴圈遍歷所有節點對，共  次。在每次迴圈中，計算森林距離需要 ，其中 m 和 n 是當前節點的子節點數量。將所有子節點對的計算成本攤銷後，總時間複雜度為 。空間複雜度: 。主要來自於儲存 D_tree 和 D_forest 距離矩陣。本文件提供了實作所需的核心邏輯與框架。在實際撰寫程式碼時，請仔細參考原始論文中的 Lemma 4 和 Lemma 7，以確保完整處理所有遞迴情況。

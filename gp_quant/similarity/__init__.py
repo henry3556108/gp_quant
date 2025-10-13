@@ -25,15 +25,29 @@ Usage:
 
 __version__ = '0.1.0'
 
+# Import implemented components
+from .tree_edit_distance import (
+    TreeNode,
+    TreeEditDistance,
+    deap_to_tree_node,
+    tree_node_to_bracket,
+    compute_ted,
+    compute_similarity
+)
+
 # Will be imported as implementations are added
-# from .tree_edit_distance import TreeEditDistance
 # from .similarity_matrix import SimilarityMatrix
 # from .parallel_calculator import ParallelSimilarityCalculator
 # from .cache import SimilarityCache
 # from .visualizer import SimilarityVisualizer
 
 __all__ = [
-    # 'TreeEditDistance',
+    'TreeNode',
+    'TreeEditDistance',
+    'deap_to_tree_node',
+    'tree_node_to_bracket',
+    'compute_ted',
+    'compute_similarity',
     # 'SimilarityMatrix',
     # 'ParallelSimilarityCalculator',
     # 'SimilarityCache',
