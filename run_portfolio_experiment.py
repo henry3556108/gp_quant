@@ -25,6 +25,7 @@ sys.path.insert(0, str(project_root))
 
 from gp_quant.backtesting.portfolio_engine import PortfolioBacktestingEngine
 from gp_quant.gp.operators import pset
+from gp_quant.evolution.early_stopping import EarlyStopping
 
 def main():
     print("="*100)
@@ -65,6 +66,11 @@ def main():
         'fitness_metric': 'sharpe_ratio',  # 'excess_return', 'sharpe_ratio', 'avg_sharpe'
         'risk_free_rate': 0.0,  # 年化無風險利率
         
+        # 早停配置
+        'early_stopping_enabled': True,      # 是否啟用早停
+        'early_stopping_patience': 10,       # 連續無進步的代數
+        'early_stopping_min_delta': 0.001,   # 最小改進閾值（根據 fitness_metric 調整）
+        
         # 輸出目錄
         'output_dir': 'portfolio_experiment_results',
         'experiment_name': f'portfolio_exp_sharpe_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
@@ -82,6 +88,10 @@ def main():
     print(f"  族群大小: {CONFIG['population_size']}")
     print(f"  演化世代: {CONFIG['generations']}")
     print(f"  Fitness 指標: {CONFIG['fitness_metric']}")
+    if CONFIG['early_stopping_enabled']:
+        print(f"  早停機制: 啟用（patience={CONFIG['early_stopping_patience']}, min_delta={CONFIG['early_stopping_min_delta']}）")
+    else:
+        print(f"  早停機制: 停用")
     print()
     
     # ============================================================================
@@ -245,6 +255,17 @@ def main():
     evolution_log = []
     start_time = datetime.now()
     
+    # 初始化早停機制
+    early_stopping = None
+    if CONFIG['early_stopping_enabled']:
+        early_stopping = EarlyStopping(
+            patience=CONFIG['early_stopping_patience'],
+            min_delta=CONFIG['early_stopping_min_delta'],
+            mode='max'  # Fitness 越大越好
+        )
+        print(f"✓ 早停機制已啟用（patience={CONFIG['early_stopping_patience']}, min_delta={CONFIG['early_stopping_min_delta']}）")
+        print()
+    
     for gen in range(CONFIG['generations']):
         gen_start_time = datetime.now()
         
@@ -292,6 +313,51 @@ def main():
             'timestamp': datetime.now().isoformat()
         }
         evolution_log.append(gen_log)
+        
+        # ========================================================================
+        # 早停檢查
+        # ========================================================================
+        
+        if early_stopping is not None:
+            current_best = hof[0].fitness.values[0]
+            
+            if early_stopping.step(current_best):
+                print(f"\n⏹️  早停觸發！")
+                print(f"   連續 {early_stopping.counter} 代無顯著進步")
+                print(f"   最佳 fitness: {early_stopping.best_fitness:.4f}")
+                print(f"   最終 generation: {gen + 1}/{CONFIG['generations']}")
+                print(f"   早停狀態: {early_stopping.get_status()}")
+                
+                # 記錄早停資訊
+                gen_log['early_stopped'] = True
+                gen_log['early_stop_reason'] = f'No improvement for {early_stopping.counter} generations'
+                
+                # 儲存最後一代後跳出循環
+                print(f"\n💾 儲存最終 Generation {gen + 1} 族群...")
+                gen_file = generations_dir / f"generation_{gen+1:03d}_final.pkl"
+                
+                try:
+                    with open(gen_file, 'wb') as f:
+                        dill.dump({
+                            'generation': gen + 1,
+                            'population': population,
+                            'hall_of_fame': list(hof),
+                            'statistics': record,
+                            'early_stopped': True,
+                            'early_stopping_status': early_stopping.get_status(),
+                            'timestamp': datetime.now().isoformat()
+                        }, f)
+                    
+                    file_size = gen_file.stat().st_size / (1024 * 1024)
+                    print(f"   ✓ 已儲存: {gen_file.name} ({file_size:.2f} MB)")
+                except Exception as e:
+                    print(f"   ✗ 儲存失敗: {e}")
+                
+                break  # 跳出演化循環
+            else:
+                # 顯示早停狀態
+                if gen > 0:  # 第一代不顯示
+                    print(f"\n⏸️  早停狀態: {early_stopping.counter}/{early_stopping.patience} 代無進步")
         
         # ========================================================================
         # 儲存當前世代的族群
@@ -361,6 +427,7 @@ def main():
     # ============================================================================
     
     total_time = (datetime.now() - start_time).total_seconds()
+    actual_generations = gen + 1  # 實際運行的代數
     
     print()
     print("="*100)
@@ -369,8 +436,17 @@ def main():
     print()
     
     print(f"⏱️  總耗時: {total_time/60:.2f} 分鐘 ({total_time:.1f} 秒)")
-    print(f"📊 總世代數: {CONFIG['generations']}")
-    print(f"⚡ 平均每代: {total_time/CONFIG['generations']:.1f} 秒")
+    print(f"📊 總世代數: {actual_generations}/{CONFIG['generations']}")
+    
+    # 顯示早停資訊
+    if early_stopping is not None and early_stopping.should_stop:
+        print(f"⏹️  早停: 是（第 {actual_generations} 代觸發）")
+        print(f"   原因: 連續 {early_stopping.patience} 代無顯著進步（min_delta={early_stopping.min_delta}）")
+        print(f"   最佳 fitness: {early_stopping.best_fitness:.4f}")
+    else:
+        print(f"⏹️  早停: 否（完整運行）")
+    
+    print(f"⚡ 平均每代: {total_time/actual_generations:.1f} 秒")
     print()
     
     # ============================================================================
@@ -381,16 +457,32 @@ def main():
     
     # 儲存 JSON 日誌
     log_file = exp_dir / "evolution_log.json"
+    log_data = {
+        'config': CONFIG,
+        'evolution_log': evolution_log,
+        'total_time': total_time,
+        'actual_generations': actual_generations,
+        'final_statistics': {
+            'best_fitness': float(hof[0].fitness.values[0]),
+            'best_pnl': float(hof[0].fitness.values[0] * CONFIG['initial_capital'])
+        }
+    }
+    
+    # 添加早停資訊
+    if early_stopping is not None:
+        log_data['early_stopping'] = {
+            'enabled': True,
+            'triggered': early_stopping.should_stop,
+            'status': early_stopping.get_status()
+        }
+    else:
+        log_data['early_stopping'] = {
+            'enabled': False,
+            'triggered': False
+        }
+    
     with open(log_file, 'w') as f:
-        json.dump({
-            'config': CONFIG,
-            'evolution_log': evolution_log,
-            'total_time': total_time,
-            'final_statistics': {
-                'best_fitness': float(hof[0].fitness.values[0]),
-                'best_pnl': float(hof[0].fitness.values[0] * CONFIG['initial_capital'])
-            }
-        }, f, indent=2)
+        json.dump(log_data, f, indent=2)
     print(f"   ✓ {log_file}")
     
     # 儲存 CSV 日誌
