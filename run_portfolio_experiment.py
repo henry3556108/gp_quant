@@ -68,7 +68,7 @@ def main():
         
         # 早停配置
         'early_stopping_enabled': True,      # 是否啟用早停
-        'early_stopping_patience': 10,       # 連續無進步的代數
+        'early_stopping_patience': 5,       # 連續無進步的代數
         'early_stopping_min_delta': 0.001,   # 最小改進閾值（根據 fitness_metric 調整）
         
         # 輸出目錄
