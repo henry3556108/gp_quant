@@ -6,6 +6,13 @@ This script verifies that:
 2. It can be used in GP trees
 3. It produces expected results
 """
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import numpy as np
 from deap import gp, creator, base
 from gp_quant.gp import operators
