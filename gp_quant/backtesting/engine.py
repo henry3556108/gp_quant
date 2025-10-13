@@ -94,9 +94,16 @@ class BacktestingEngine:
         import copy
         self.pset = copy.deepcopy(pset)
 
-    def evaluate(self, individual: gp.PrimitiveTree) -> tuple[float]:
+    def evaluate(self, individual: gp.PrimitiveTree, fitness_metric: str = 'excess_return') -> tuple[float]:
         """
         Evaluates the fitness of a single GP individual using vectorization.
+        
+        Args:
+            individual: GP tree to evaluate
+            fitness_metric: 'excess_return' or 'sharpe_ratio'
+        
+        Returns:
+            Tuple containing fitness score
         """
         # Inject the full data vectors into the pset terminals for NumVector type
         price_vec = self.data['Close'].to_numpy()
@@ -172,25 +179,128 @@ class BacktestingEngine:
         else:
             buy_and_hold_return = 0
 
-        # --- Fitness is the Excess Return ---
-        excess_return = gp_return - buy_and_hold_return
+        # --- Calculate Fitness based on metric ---
+        if fitness_metric == 'sharpe_ratio':
+            # Use Sharpe Ratio as fitness
+            sharpe = self._calculate_sharpe_ratio(backtest_signals, self.backtest_data)
+            return sharpe,
+        else:
+            # Default: Excess Return
+            excess_return = gp_return - buy_and_hold_return
 
-        # --- Final Fitness Sanity Check ---
-        # Fitness should be within economically reasonable bounds
-        # Based on PRD: training period average return was 131.17%, so 1000x is very generous
-        MAX_REASONABLE_FITNESS = self.initial_capital * 1000
-        MIN_REASONABLE_FITNESS = -self.initial_capital * 2
+            # --- Final Fitness Sanity Check ---
+            # Fitness should be within economically reasonable bounds
+            # Based on PRD: training period average return was 131.17%, so 1000x is very generous
+            MAX_REASONABLE_FITNESS = self.initial_capital * 1000
+            MIN_REASONABLE_FITNESS = -self.initial_capital * 2
+            
+            if not np.isfinite(excess_return) or \
+               excess_return > MAX_REASONABLE_FITNESS or \
+               excess_return < MIN_REASONABLE_FITNESS:
+                # print(f"[WARNING] Unreasonable fitness detected: {excess_return:.2e}, assigning penalty") # Uncomment for debug
+                return -100000.0,
+
+            # print(f"[DIAGNOSTIC] Final fitness for {individual}: {excess_return:.2f}") # Uncomment for extreme verbosity
+            
+            return excess_return,
+
+    def _calculate_sharpe_ratio(self, signals: np.ndarray, data: pd.DataFrame, 
+                                risk_free_rate: float = 0.0) -> float:
+        """
+        Calculate Sharpe Ratio for the trading strategy.
         
-        if not np.isfinite(excess_return) or \
-           excess_return > MAX_REASONABLE_FITNESS or \
-           excess_return < MIN_REASONABLE_FITNESS:
-            # print(f"[WARNING] Unreasonable fitness detected: {excess_return:.2e}, assigning penalty") # Uncomment for debug
-            return -100000.0,
-
-        # print(f"[DIAGNOSTIC] Final fitness for {individual}: {excess_return:.2f}") # Uncomment for extreme verbosity
+        Args:
+            signals: Boolean array of trading signals
+            data: DataFrame with price data
+            risk_free_rate: Annual risk-free rate (default: 0.0)
         
-        return excess_return,
-
+        Returns:
+            Annualized Sharpe Ratio, or 0.0 for edge cases, or -100000.0 for penalties
+        """
+        # Get equity curve
+        equity_curve = self._run_simulation_with_equity_curve(signals, data)
+        
+        # Edge case: No trades or insufficient data
+        if len(equity_curve) < 2:
+            return 0.0  # Neutral fitness for no-trade strategies
+        
+        # Calculate daily returns
+        returns = equity_curve.pct_change().dropna()
+        
+        # Edge case: No valid returns
+        if len(returns) == 0:
+            return 0.0
+        
+        # Filter out NaN and Inf
+        returns = returns[np.isfinite(returns)]
+        
+        if len(returns) == 0:
+            return 0.0
+        
+        # Calculate mean and std
+        mean_return = returns.mean()
+        std_return = returns.std()
+        
+        # Edge case: Zero volatility (no trading or constant value)
+        if std_return == 0 or not np.isfinite(std_return):
+            return 0.0
+        
+        # Calculate annualized Sharpe Ratio (assuming 252 trading days)
+        sharpe = (mean_return * 252 - risk_free_rate) / (std_return * np.sqrt(252))
+        
+        # Sanity check: Sharpe should be reasonable
+        if not np.isfinite(sharpe):
+            return -100000.0  # Penalty for numerical errors
+        
+        # Extreme values are likely errors
+        if sharpe > 10 or sharpe < -10:
+            return -100000.0  # Penalty for unrealistic Sharpe
+        
+        return sharpe
+    
+    def _run_simulation_with_equity_curve(self, signals: np.ndarray, 
+                                         data: pd.DataFrame) -> pd.Series:
+        """
+        Run simulation and return daily equity curve.
+        
+        Args:
+            signals: Boolean array of trading signals
+            data: DataFrame with OHLC data
+        
+        Returns:
+            Series of daily portfolio values indexed by date
+        """
+        position = 0  # 0 for no position, 1 for long
+        capital = self.initial_capital
+        shares = 0.0
+        equity_values = []
+        
+        open_prices = data['Open'].to_numpy()
+        close_prices = data['Close'].to_numpy()
+        
+        for i in range(len(signals)):
+            signal = signals[i]
+            
+            # Execute trades at next day's open (if not last day)
+            if i < len(signals) - 1:
+                next_open = open_prices[i + 1]
+                
+                if position == 0 and signal == True:  # Buy signal
+                    if next_open > 0:
+                        shares = capital / next_open
+                        capital = 0.0
+                        position = 1
+                elif position == 1 and signal == False:  # Sell signal
+                    capital = shares * next_open
+                    shares = 0.0
+                    position = 0
+            
+            # Record equity at end of day (close price)
+            current_equity = capital + shares * close_prices[i]
+            equity_values.append(current_equity)
+        
+        return pd.Series(equity_values, index=data.index)
+    
     def _run_vectorized_simulation(self, signals: np.ndarray, data: pd.DataFrame = None) -> float:
         """
         Runs the simulation using the fast Numba JIT-compiled loop.
@@ -493,34 +603,117 @@ class PortfolioBacktestingEngine:
         print(f"Portfolio initialized with {self.n_tickers} tickers")
         print(f"Capital per ticker: ${self.capital_per_ticker:,.2f}")
     
-    def evaluate(self, individual: gp.PrimitiveTree) -> tuple[float]:
+    def evaluate(self, individual: gp.PrimitiveTree, fitness_metric: str = 'excess_return') -> tuple[float]:
         """
         Evaluates the fitness of a GP individual across all tickers in the portfolio.
         
-        The fitness is calculated as the sum of excess returns from all tickers:
-        fitness = sum(excess_return_ticker_i for all tickers)
-        
         Args:
             individual: A GP tree representing the trading rule
+            fitness_metric: Fitness calculation method:
+                - 'excess_return': Sum of excess returns (default)
+                - 'sharpe_ratio': Portfolio-level Sharpe Ratio
+                - 'avg_sharpe': Average of individual Sharpe Ratios
             
         Returns:
-            A tuple containing the portfolio fitness (total excess return)
+            A tuple containing the portfolio fitness
         """
-        total_excess_return = 0.0
-        ticker_results = {}
+        if fitness_metric == 'sharpe_ratio':
+            # Portfolio-level Sharpe: combine all equity curves
+            return self._calculate_portfolio_sharpe(individual),
+        
+        elif fitness_metric == 'avg_sharpe':
+            # Average of individual Sharpe Ratios
+            total_sharpe = 0.0
+            valid_count = 0
+            
+            for ticker in self.tickers:
+                engine = self.engines[ticker]
+                sharpe = engine.evaluate(individual, fitness_metric='sharpe_ratio')[0]
+                
+                # Only count valid Sharpe values (not penalties)
+                if sharpe > -10000:  # Not a penalty value
+                    total_sharpe += sharpe
+                    valid_count += 1
+            
+            if valid_count == 0:
+                return 0.0,  # No valid strategies
+            
+            avg_sharpe = total_sharpe / valid_count
+            return avg_sharpe,
+        
+        else:
+            # Default: Sum of excess returns
+            total_excess_return = 0.0
+            ticker_results = {}
+            
+            for ticker in self.tickers:
+                # Evaluate the individual on this ticker
+                engine = self.engines[ticker]
+                excess_return = engine.evaluate(individual, fitness_metric='excess_return')[0]
+                
+                ticker_results[ticker] = excess_return
+                total_excess_return += excess_return
+            
+            # Optional: Print detailed results for debugging
+            # print(f"Portfolio evaluation: {ticker_results}, Total: {total_excess_return:.2f}")
+            
+            return total_excess_return,
+    
+    def _calculate_portfolio_sharpe(self, individual: gp.PrimitiveTree) -> float:
+        """
+        Calculate portfolio-level Sharpe Ratio by combining equity curves.
+        
+        Args:
+            individual: GP tree to evaluate
+        
+        Returns:
+            Portfolio Sharpe Ratio
+        """
+        # Get equity curves from all tickers
+        equity_curves = []
         
         for ticker in self.tickers:
-            # Evaluate the individual on this ticker
             engine = self.engines[ticker]
-            excess_return = engine.evaluate(individual)[0]
-            
-            ticker_results[ticker] = excess_return
-            total_excess_return += excess_return
+            equity_curve = engine._run_simulation_with_equity_curve(
+                engine.get_signals(individual),
+                engine.backtest_data
+            )
+            equity_curves.append(equity_curve)
         
-        # Optional: Print detailed results for debugging
-        # print(f"Portfolio evaluation: {ticker_results}, Total: {total_excess_return:.2f}")
+        # Combine equity curves (sum across tickers)
+        # Align by date index
+        combined_equity = pd.concat(equity_curves, axis=1).sum(axis=1)
         
-        return total_excess_return,
+        # Edge case: insufficient data
+        if len(combined_equity) < 2:
+            return 0.0
+        
+        # Calculate returns
+        returns = combined_equity.pct_change().dropna()
+        
+        if len(returns) == 0:
+            return 0.0
+        
+        # Filter out NaN and Inf
+        returns = returns[np.isfinite(returns)]
+        
+        if len(returns) == 0:
+            return 0.0
+        
+        # Calculate Sharpe
+        mean_return = returns.mean()
+        std_return = returns.std()
+        
+        if std_return == 0 or not np.isfinite(std_return):
+            return 0.0
+        
+        sharpe = (mean_return * 252) / (std_return * np.sqrt(252))
+        
+        # Sanity check
+        if not np.isfinite(sharpe) or sharpe > 10 or sharpe < -10:
+            return -100000.0
+        
+        return sharpe
     
     def run_detailed_simulation(self, individual: gp.PrimitiveTree) -> Dict:
         """

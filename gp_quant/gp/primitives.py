@@ -172,3 +172,21 @@ def mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         
     return np.multiply(a, b)
 
+def norm(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """
+    Vectorized Norm operator: calculates the absolute difference between two vectors.
+    
+    Norm(r1, r2) = |r1 - r2|
+    
+    This operator is commonly used in technical analysis to measure the distance
+    between two price series or indicators.
+    
+    Args:
+        a: First numerical vector
+        b: Second numerical vector
+        
+    Returns:
+        Absolute difference between the two vectors
+    """
+    return np.abs(np.subtract(a, b))
+

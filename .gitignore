@@ -147,6 +147,7 @@ $RECYCLE.BIN/
 
 # Experiment output files (可以選擇性保留部分結果)
 experiments_results/
+portfolio_experiment_results/
 all_experiments_results.csv
 all_experiments_results.json
 experiments_summary.json
@@ -206,7 +207,7 @@ logs/
 # ============================================================================
 
 # Ignore all markdown files except specific ones
-*.md
+# *.md
 *.txt
 *.csv
 

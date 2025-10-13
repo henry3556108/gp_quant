@@ -40,6 +40,7 @@ pset.addPrimitive(prim.add, [NumVector, NumVector], NumVector, name="add")
 pset.addPrimitive(prim.sub, [NumVector, NumVector], NumVector, name="sub")
 pset.addPrimitive(prim.mul, [NumVector, NumVector], NumVector, name="mul")
 pset.addPrimitive(prim.protected_div, [NumVector, NumVector], NumVector, name="div")
+pset.addPrimitive(prim.norm, [NumVector, NumVector], NumVector, name="norm")
 
 # Financial primitives: These take a numerical vector and an integer, returning a numerical vector.
 pset.addPrimitive(prim.moving_average, [NumVector, int], NumVector, name="avg")
