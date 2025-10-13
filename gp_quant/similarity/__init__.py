@@ -35,8 +35,9 @@ from .tree_edit_distance import (
     compute_similarity
 )
 
+from .similarity_matrix import SimilarityMatrix
+
 # Will be imported as implementations are added
-# from .similarity_matrix import SimilarityMatrix
 # from .parallel_calculator import ParallelSimilarityCalculator
 # from .cache import SimilarityCache
 # from .visualizer import SimilarityVisualizer
@@ -48,7 +49,7 @@ __all__ = [
     'tree_node_to_bracket',
     'compute_ted',
     'compute_similarity',
-    # 'SimilarityMatrix',
+    'SimilarityMatrix',
     # 'ParallelSimilarityCalculator',
     # 'SimilarityCache',
     # 'SimilarityVisualizer',
