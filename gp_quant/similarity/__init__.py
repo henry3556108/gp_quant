@@ -23,7 +23,7 @@ Usage:
     matrix = sim_matrix.compute()
 """
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 
 # Import implemented components
 from .tree_edit_distance import (
@@ -36,9 +36,9 @@ from .tree_edit_distance import (
 )
 
 from .similarity_matrix import SimilarityMatrix
+from .parallel_calculator import ParallelSimilarityMatrix
 
 # Will be imported as implementations are added
-# from .parallel_calculator import ParallelSimilarityCalculator
 # from .cache import SimilarityCache
 # from .visualizer import SimilarityVisualizer
 
@@ -50,7 +50,7 @@ __all__ = [
     'compute_ted',
     'compute_similarity',
     'SimilarityMatrix',
-    # 'ParallelSimilarityCalculator',
+    'ParallelSimilarityMatrix',
     # 'SimilarityCache',
     # 'SimilarityVisualizer',
 ]

@@ -26,7 +26,7 @@ sys.path.insert(0, str(project_root))
 from gp_quant.backtesting.portfolio_engine import PortfolioBacktestingEngine
 from gp_quant.gp.operators import pset
 from gp_quant.evolution.early_stopping import EarlyStopping
-from gp_quant.similarity import SimilarityMatrix
+from gp_quant.similarity import SimilarityMatrix, ParallelSimilarityMatrix
 from gp_quant.niching import NichingClusterer, CrossNicheSelector
 
 def main():
@@ -440,8 +440,16 @@ def main():
                 sim_start = datetime.now()
                 
                 try:
-                    sim_matrix = SimilarityMatrix(population)
-                    similarity_matrix = sim_matrix.compute(show_progress=False)
+                    # 根據族群大小選擇計算方式
+                    if len(population) >= 200:
+                        # 大族群使用並行計算
+                        sim_matrix = ParallelSimilarityMatrix(population, n_workers=8)
+                        similarity_matrix = sim_matrix.compute(show_progress=False)
+                    else:
+                        # 小族群使用序列計算
+                        sim_matrix = SimilarityMatrix(population)
+                        similarity_matrix = sim_matrix.compute(show_progress=False)
+                    
                     sim_time = (datetime.now() - sim_start).total_seconds()
                     
                     print(f"   ✓ 相似度矩陣計算完成 ({sim_time:.1f}s)")
