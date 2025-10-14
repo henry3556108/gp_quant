@@ -12,12 +12,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import sys
+import json
 
 # 設置中文字體
 plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-def calculate_buy_and_hold(trades_file, initial_capital_per_stock=25000.0):
+def calculate_buy_and_hold(trades_file, initial_capital_per_stock=25000.0, fixed_tickers=None, start_date=None, end_date=None):
     """
     計算 Buy-and-Hold 基準績效
     
@@ -26,16 +27,23 @@ def calculate_buy_and_hold(trades_file, initial_capital_per_stock=25000.0):
     Args:
         trades_file: 交易記錄 CSV 文件
         initial_capital_per_stock: 每個股票的初始資金
+        fixed_tickers: 固定的股票列表（如果為 None，則從交易記錄中提取）
+        start_date: 回測開始日期（如果為 None，則從交易記錄中提取）
+        end_date: 回測結束日期（如果為 None，則從交易記錄中提取）
         
     Returns:
         dates: 日期列表
         bh_pnl: Buy-and-Hold PnL 列表
     """
-    # 讀取交易記錄以獲取股票列表和日期範圍
+    # 讀取交易記錄
     trades = pd.read_csv(trades_file)
     trades['date'] = pd.to_datetime(trades['date'])
     
-    tickers = trades['ticker'].unique()
+    # 使用固定的股票列表或從交易記錄中提取
+    if fixed_tickers is not None:
+        tickers = fixed_tickers
+    else:
+        tickers = trades['ticker'].unique()
     
     # 載入股價數據
     project_root = Path(__file__).parent
@@ -50,10 +58,18 @@ def calculate_buy_and_hold(trades_file, initial_capital_per_stock=25000.0):
     if not stock_data:
         return [], []
     
-    # 找到交易日期範圍
-    all_dates = sorted(trades['date'].unique())
-    start_date = all_dates[0]
-    end_date = all_dates[-1]
+    # 確定日期範圍
+    if start_date is None or end_date is None:
+        # 如果沒有提供日期，從交易記錄中提取
+        all_dates = sorted(trades['date'].unique())
+        if start_date is None:
+            start_date = all_dates[0]
+        if end_date is None:
+            end_date = all_dates[-1]
+    else:
+        # 轉換為 datetime
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
     
     # 為每個股票計算 Buy-and-Hold PnL
     bh_pnl_by_ticker = {}
@@ -157,18 +173,28 @@ def calculate_sharpe_ratio(pnl_series, dates, risk_free_rate=0.0, initial_capita
     
     return sharpe if np.isfinite(sharpe) else 0.0
 
-def plot_portfolio_performance(ax, trades_file, title):
+def plot_portfolio_performance(ax, trades_file, title, fixed_tickers=None, start_date=None, end_date=None):
     """
     繪製組合績效圖
     
     Args:
+        ax: matplotlib axis
         trades_file: 交易記錄 CSV 文件路徑
         title: 圖表標題
-        output_file: 輸出圖片路徑
+        fixed_tickers: 固定的股票列表（用於 Buy-and-Hold 基準）
+        start_date: 回測開始日期（用於過濾交易記錄）
+        end_date: 回測結束日期（用於過濾交易記錄）
     """
     # 讀取交易記錄
     trades = pd.read_csv(trades_file)
     trades['date'] = pd.to_datetime(trades['date'])
+    
+    # 過濾交易記錄到指定時間範圍
+    if start_date is not None and end_date is not None:
+        start_date_dt = pd.to_datetime(start_date)
+        end_date_dt = pd.to_datetime(end_date)
+        mask = (trades['date'] >= start_date_dt) & (trades['date'] <= end_date_dt)
+        trades = trades[mask]
     
     # 獲取所有股票
     tickers = trades['ticker'].unique()
@@ -246,8 +272,8 @@ def plot_portfolio_performance(ax, trades_file, title):
            alpha=0.9,
            zorder=10)
     
-    # 計算並繪製 Buy-and-Hold 基準線
-    bh_dates, bh_pnl = calculate_buy_and_hold(trades_file)
+    # 計算並繪製 Buy-and-Hold 基準線（使用固定股票列表和時間範圍）
+    bh_dates, bh_pnl = calculate_buy_and_hold(trades_file, fixed_tickers=fixed_tickers, start_date=start_date, end_date=end_date)
     if len(bh_dates) > 0:
         ax.plot(bh_dates, bh_pnl,
                label='Buy-and-Hold',
@@ -297,10 +323,11 @@ def plot_portfolio_performance(ax, trades_file, title):
 
 def main():
     # 設置路徑
-    exp_dir = Path('portfolio_experiment_results/portfolio_exp_sharpe_20251013_164011')
+    exp_dir = Path('portfolio_experiment_results/portfolio_exp_sharpe_20251014_191353')
     
     train_trades = exp_dir / 'best_individual_train_trades.csv'
     test_trades = exp_dir / 'best_individual_test_trades.csv'
+    config_file = exp_dir / 'config.json'
     
     # 檢查文件是否存在
     if not train_trades.exists():
@@ -311,10 +338,32 @@ def main():
         print(f"✗ 找不到測試期交易記錄: {test_trades}")
         return
     
+    if not config_file.exists():
+        print(f"✗ 找不到配置文件: {config_file}")
+        return
+    
+    # 讀取配置文件
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    
     print("="*80)
     print("📊 視覺化 Portfolio 交易績效")
     print("="*80)
     print()
+    
+    # 從配置文件讀取時間區間
+    train_start = config['train_backtest_start']
+    train_end = config['train_backtest_end']
+    test_start = config['test_backtest_start']
+    test_end = config['test_backtest_end']
+    
+    print(f"📅 時間區間:")
+    print(f"  訓練期: {train_start} 到 {train_end}")
+    print(f"  測試期: {test_start} 到 {test_end}")
+    print()
+    
+    # 固定的股票列表（用於 Buy-and-Hold 基準）
+    FIXED_TICKERS = config.get('tickers', ['ABX.TO', 'BBD-B.TO', 'RY.TO', 'TRP.TO'])
     
     # 創建上下子圖
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 12))
@@ -324,7 +373,10 @@ def main():
     train_stats = plot_portfolio_performance(
         ax1,
         train_trades,
-        '訓練期（樣本內）Portfolio 績效'
+        '訓練期（樣本內）Portfolio 績效',
+        fixed_tickers=FIXED_TICKERS,
+        start_date=train_start,
+        end_date=train_end
     )
     
     print(f"\n訓練期統計:")
@@ -342,7 +394,10 @@ def main():
     test_stats = plot_portfolio_performance(
         ax2,
         test_trades,
-        '測試期（樣本外）Portfolio 績效'
+        '測試期（樣本外）Portfolio 績效',
+        fixed_tickers=FIXED_TICKERS,
+        start_date=test_start,
+        end_date=test_end
     )
     
     print(f"\n測試期統計:")
