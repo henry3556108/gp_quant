@@ -26,6 +26,8 @@ sys.path.insert(0, str(project_root))
 from gp_quant.backtesting.portfolio_engine import PortfolioBacktestingEngine
 from gp_quant.gp.operators import pset
 from gp_quant.evolution.early_stopping import EarlyStopping
+from gp_quant.similarity import SimilarityMatrix
+from gp_quant.niching import NichingClusterer, CrossNicheSelector
 
 def main():
     print("="*100)
@@ -54,7 +56,7 @@ def main():
         'initial_capital': 100000.0,
         
         # GP 參數
-        'population_size': 5000,
+        'population_size': 100,
         'generations': 50,
         
         # 演化參數
@@ -70,6 +72,13 @@ def main():
         'early_stopping_enabled': True,      # 是否啟用早停
         'early_stopping_patience': 5,       # 連續無進步的代數
         'early_stopping_min_delta': 0.001,   # 最小改進閾值（根據 fitness_metric 調整）
+        
+        # Niching 配置
+        'niching_enabled': True,            # 是否啟用 Niching 策略
+        'niching_n_clusters': 5,            # Niche 數量
+        'niching_cross_ratio': 0.8,         # 跨群交配比例 (0.8 = 80%)
+        'niching_update_frequency': 5,      # 每 N 代重新計算相似度矩陣
+        'niching_algorithm': 'kmeans',      # 聚類演算法 ('kmeans' 或 'hierarchical')
         
         # 輸出目錄
         'output_dir': 'portfolio_experiment_results',
@@ -92,6 +101,14 @@ def main():
         print(f"  早停機制: 啟用（patience={CONFIG['early_stopping_patience']}, min_delta={CONFIG['early_stopping_min_delta']}）")
     else:
         print(f"  早停機制: 停用")
+    if CONFIG['niching_enabled']:
+        print(f"  Niching 策略: 啟用")
+        print(f"    - Niche 數量: {CONFIG['niching_n_clusters']}")
+        print(f"    - 跨群比例: {CONFIG['niching_cross_ratio']:.0%}")
+        print(f"    - 更新頻率: 每 {CONFIG['niching_update_frequency']} 代")
+        print(f"    - 聚類演算法: {CONFIG['niching_algorithm']}")
+    else:
+        print(f"  Niching 策略: 停用")
     print()
     
     # ============================================================================
@@ -266,6 +283,23 @@ def main():
         print(f"✓ 早停機制已啟用（patience={CONFIG['early_stopping_patience']}, min_delta={CONFIG['early_stopping_min_delta']}）")
         print()
     
+    # 初始化 Niching 機制
+    niching_selector = None
+    niche_labels = None
+    niching_log = []
+    
+    if CONFIG['niching_enabled']:
+        niching_selector = CrossNicheSelector(
+            cross_niche_ratio=CONFIG['niching_cross_ratio'],
+            tournament_size=CONFIG['tournament_size'],
+            random_state=42
+        )
+        print(f"✓ Niching 策略已啟用")
+        print(f"  - Niche 數量: {CONFIG['niching_n_clusters']}")
+        print(f"  - 跨群比例: {CONFIG['niching_cross_ratio']:.0%}")
+        print(f"  - 更新頻率: 每 {CONFIG['niching_update_frequency']} 代")
+        print()
+    
     for gen in range(CONFIG['generations']):
         gen_start_time = datetime.now()
         
@@ -398,9 +432,88 @@ def main():
         if gen < CONFIG['generations'] - 1:
             print(f"\n🔄 選擇和繁殖...")
             
-            # Selection
-            offspring = toolbox.select(population, len(population))
-            offspring = list(map(toolbox.clone, offspring))
+            # ====================================================================
+            # Niching: 計算相似度矩陣並聚類（每 N 代更新一次）
+            # ====================================================================
+            if CONFIG['niching_enabled'] and gen % CONFIG['niching_update_frequency'] == 0:
+                print(f"\n🔬 Niching: 計算相似度矩陣...")
+                sim_start = datetime.now()
+                
+                try:
+                    sim_matrix = SimilarityMatrix(population)
+                    similarity_matrix = sim_matrix.compute(show_progress=False)
+                    sim_time = (datetime.now() - sim_start).total_seconds()
+                    
+                    print(f"   ✓ 相似度矩陣計算完成 ({sim_time:.1f}s)")
+                    print(f"   平均相似度: {sim_matrix.get_average_similarity():.4f}")
+                    print(f"   多樣性分數: {sim_matrix.get_diversity_score():.4f}")
+                    
+                    # 聚類
+                    print(f"\n🔬 Niching: 聚類（k={CONFIG['niching_n_clusters']}）...")
+                    clusterer = NichingClusterer(
+                        n_clusters=CONFIG['niching_n_clusters'],
+                        algorithm=CONFIG['niching_algorithm']
+                    )
+                    niche_labels = clusterer.fit_predict(similarity_matrix)
+                    
+                    print(f"   ✓ 聚類完成")
+                    print(f"   Silhouette 分數: {clusterer.silhouette_score_:.4f}")
+                    
+                    # 統計各 niche 大小
+                    unique_niches, counts = np.unique(niche_labels, return_counts=True)
+                    print(f"   各 Niche 大小: {dict(zip(unique_niches, counts))}")
+                    
+                    # 記錄 niching 統計
+                    niching_log.append({
+                        'generation': gen + 1,
+                        'avg_similarity': float(sim_matrix.get_average_similarity()),
+                        'diversity_score': float(sim_matrix.get_diversity_score()),
+                        'silhouette_score': float(clusterer.silhouette_score_),
+                        'niche_sizes': {int(k): int(v) for k, v in zip(unique_niches, counts)},
+                        'computation_time': sim_time
+                    })
+                    
+                except Exception as e:
+                    print(f"   ✗ Niching 計算失敗: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # 失敗時使用傳統選擇
+                    niche_labels = None
+            
+            # ====================================================================
+            # Selection: 使用 Niching 或傳統選擇
+            # ====================================================================
+            if CONFIG['niching_enabled'] and niche_labels is not None:
+                # 使用跨群選擇
+                print(f"\n🎯 使用跨群選擇...")
+                try:
+                    offspring = niching_selector.select(population, niche_labels, len(population))
+                    offspring = list(map(toolbox.clone, offspring))
+                    
+                    # 顯示選擇統計
+                    selection_stats = niching_selector.get_statistics()
+                    print(f"   ✓ 選擇完成")
+                    print(f"   跨群配對: {selection_stats['cross_niche_pairs']} ({selection_stats['cross_niche_ratio_actual']:.0%})")
+                    print(f"   群內配對: {selection_stats['within_niche_pairs']} ({selection_stats['within_niche_ratio_actual']:.0%})")
+                    
+                    # 記錄選擇統計
+                    gen_log['niching_selection'] = {
+                        'cross_niche_pairs': selection_stats['cross_niche_pairs'],
+                        'within_niche_pairs': selection_stats['within_niche_pairs'],
+                        'cross_niche_ratio': selection_stats['cross_niche_ratio_actual']
+                    }
+                    
+                except Exception as e:
+                    print(f"   ✗ 跨群選擇失敗: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # 失敗時使用傳統選擇
+                    offspring = toolbox.select(population, len(population))
+                    offspring = list(map(toolbox.clone, offspring))
+            else:
+                # 使用傳統 tournament selection
+                offspring = toolbox.select(population, len(population))
+                offspring = list(map(toolbox.clone, offspring))
             
             # Crossover
             for child1, child2 in zip(offspring[::2], offspring[1::2]):
@@ -479,6 +592,21 @@ def main():
         log_data['early_stopping'] = {
             'enabled': False,
             'triggered': False
+        }
+    
+    # 添加 Niching 資訊
+    if CONFIG['niching_enabled']:
+        log_data['niching'] = {
+            'enabled': True,
+            'n_clusters': CONFIG['niching_n_clusters'],
+            'cross_ratio': CONFIG['niching_cross_ratio'],
+            'update_frequency': CONFIG['niching_update_frequency'],
+            'algorithm': CONFIG['niching_algorithm'],
+            'log': niching_log
+        }
+    else:
+        log_data['niching'] = {
+            'enabled': False
         }
     
     with open(log_file, 'w') as f:
