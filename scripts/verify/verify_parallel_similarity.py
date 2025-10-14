@@ -104,7 +104,7 @@ def test_performance():
     print("="*80)
     print()
     
-    sizes = [50, 100, 200, 500]
+    sizes = [50, 100, 200, 500, 2000]
     results = []
     
     for size in sizes:
