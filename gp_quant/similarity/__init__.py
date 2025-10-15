@@ -37,10 +37,15 @@ from .tree_edit_distance import (
 
 from .similarity_matrix import SimilarityMatrix
 from .parallel_calculator import ParallelSimilarityMatrix
+from .visualizer import (
+    plot_diversity_evolution,
+    plot_similarity_heatmap,
+    plot_similarity_distribution,
+    plot_population_tsne
+)
 
 # Will be imported as implementations are added
 # from .cache import SimilarityCache
-# from .visualizer import SimilarityVisualizer
 
 __all__ = [
     'TreeNode',
@@ -51,6 +56,9 @@ __all__ = [
     'compute_similarity',
     'SimilarityMatrix',
     'ParallelSimilarityMatrix',
+    'plot_diversity_evolution',
+    'plot_similarity_heatmap',
+    'plot_similarity_distribution',
+    'plot_population_tsne',
     # 'SimilarityCache',
-    # 'SimilarityVisualizer',
 ]
