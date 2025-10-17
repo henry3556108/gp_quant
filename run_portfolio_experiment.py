@@ -56,7 +56,7 @@ def main():
         'initial_capital': 100000.0,
         
         # GP 參數
-        'population_size': 100,
+        'population_size': 5000,
         'generations': 50,
         
         # 演化參數
@@ -75,9 +75,9 @@ def main():
         
         # Niching 配置
         'niching_enabled': True,            # 是否啟用 Niching 策略
-        'niching_n_clusters': 5,            # Niche 數量
+        'niching_n_clusters': 3,            # Niche 數量
         'niching_cross_ratio': 0.8,         # 跨群交配比例 (0.8 = 80%)
-        'niching_update_frequency': 5,      # 每 N 代重新計算相似度矩陣
+        'niching_update_frequency': 1,      # 每 N 代重新計算相似度矩陣
         'niching_algorithm': 'kmeans',      # 聚類演算法 ('kmeans' 或 'hierarchical')
         
         # 輸出目錄
