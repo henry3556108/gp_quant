@@ -27,7 +27,7 @@ from gp_quant.backtesting.portfolio_engine import PortfolioBacktestingEngine
 from gp_quant.gp.operators import pset
 from gp_quant.evolution.early_stopping import EarlyStopping
 from gp_quant.similarity import SimilarityMatrix, ParallelSimilarityMatrix
-from gp_quant.niching import NichingClusterer, CrossNicheSelector
+from gp_quant.niching import NichingClusterer, CrossNicheSelector, create_k_selector
 
 def main():
     print("="*100)
@@ -285,6 +285,7 @@ def main():
     
     # 初始化 Niching 機制
     niching_selector = None
+    k_selector = None
     niche_labels = None
     niching_log = []
     
@@ -294,8 +295,18 @@ def main():
             tournament_size=CONFIG['tournament_size'],
             random_state=42
         )
+        
+        # 創建 k 值選擇器
+        k_selector = create_k_selector(CONFIG)
+        
         print(f"✓ Niching 策略已啟用")
-        print(f"  - Niche 數量: {CONFIG['niching_n_clusters']}")
+        if 'niching_k_selection' in CONFIG:
+            print(f"  - K 值選擇: {CONFIG['niching_k_selection']} 模式")
+            if CONFIG['niching_k_selection'] == 'calibration':
+                print(f"  - 校準期: 前 {CONFIG.get('niching_k_calibration_gens', 3)} 代")
+            print(f"  - K 範圍: [{CONFIG.get('niching_k_min', 2)}, {CONFIG.get('niching_k_max', 'auto')}]")
+        else:
+            print(f"  - Niche 數量: {CONFIG['niching_n_clusters']} (固定)")
         print(f"  - 跨群比例: {CONFIG['niching_cross_ratio']:.0%}")
         print(f"  - 更新頻率: 每 {CONFIG['niching_update_frequency']} 代")
         print()
@@ -456,10 +467,26 @@ def main():
                     print(f"   平均相似度: {sim_matrix.get_average_similarity():.4f}")
                     print(f"   多樣性分數: {sim_matrix.get_diversity_score():.4f}")
                     
+                    # 動態選擇 k 值
+                    if k_selector is not None:
+                        print(f"\n🎯 選擇 K 值...")
+                        k_result = k_selector.select_k(
+                            similarity_matrix,
+                            population_size=len(population),
+                            generation=gen + 1
+                        )
+                        selected_k = k_result['k']
+                        print(f"   ✓ 選擇的 K: {selected_k}")
+                        if k_result.get('scores'):
+                            best_score = k_result['scores'][selected_k]
+                            print(f"   Silhouette Score: {best_score:.4f}")
+                    else:
+                        selected_k = CONFIG['niching_n_clusters']
+                    
                     # 聚類
-                    print(f"\n🔬 Niching: 聚類（k={CONFIG['niching_n_clusters']}）...")
+                    print(f"\n🔬 Niching: 聚類（k={selected_k}）...")
                     clusterer = NichingClusterer(
-                        n_clusters=CONFIG['niching_n_clusters'],
+                        n_clusters=selected_k,
                         algorithm=CONFIG['niching_algorithm']
                     )
                     niche_labels = clusterer.fit_predict(similarity_matrix)
@@ -471,15 +498,26 @@ def main():
                     unique_niches, counts = np.unique(niche_labels, return_counts=True)
                     print(f"   各 Niche 大小: {dict(zip(unique_niches, counts))}")
                     
+                    # 顯示每個 niche 的 silhouette score
+                    if clusterer.per_cluster_silhouette_:
+                        print(f"\n   各 Niche Silhouette Score:")
+                        for niche_id, niche_stats in clusterer.per_cluster_silhouette_.items():
+                            print(f"     Niche {niche_id}: {niche_stats['mean']:.4f} (size={niche_stats['size']}, std={niche_stats['std']:.4f})")
+                    
                     # 記錄 niching 統計
-                    niching_log.append({
+                    niching_stats = {
                         'generation': gen + 1,
+                        'selected_k': int(selected_k),
                         'avg_similarity': float(sim_matrix.get_average_similarity()),
                         'diversity_score': float(sim_matrix.get_diversity_score()),
                         'silhouette_score': float(clusterer.silhouette_score_),
                         'niche_sizes': {int(k): int(v) for k, v in zip(unique_niches, counts)},
+                        'per_niche_silhouette': clusterer.per_cluster_silhouette_,  # 新增：每個 niche 的詳細信息
                         'computation_time': sim_time
-                    })
+                    }
+                    if k_selector is not None and k_result.get('mode'):
+                        niching_stats['k_selection_mode'] = k_result['mode']
+                    niching_log.append(niching_stats)
                     
                 except Exception as e:
                     print(f"   ✗ Niching 計算失敗: {e}")
