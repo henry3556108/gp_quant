@@ -142,7 +142,7 @@ def save_population(population, generation, individual_records_dir, max_retries=
     print(f"ERROR: Failed to save population for generation {generation} after {max_retries} attempts")
 
 def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05, 
-                  individual_records_dir: Optional[str] = None):
+                  individual_records_dir: Optional[str] = None, generation_callback=None):
     """
     Configures and runs the main evolutionary algorithm.
 
@@ -156,6 +156,10 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         mutation_prob: The probability of mutation.
         individual_records_dir: Optional directory path to save population snapshots.
                                If provided, each generation's population will be saved as a pickle file.
+        generation_callback: Optional callback function called after each generation.
+                           Signature: callback(gen, pop, hof, logbook) -> bool
+                           If returns True, evolution stops early.
+                           Can be used for early stopping, logging, or other custom logic.
 
     Returns:
         A tuple containing the final population, the logbook, and the hall of fame.
@@ -241,16 +245,20 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         offspring = list(map(toolbox.clone, offspring))
 
         # Apply crossover and mutation
-        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+        # IMPORTANT: Must receive return values from toolbox.mate and toolbox.mutate
+        # because staticLimit decorator returns new individuals
+        for i in range(0, len(offspring) - 1, 2):
             if random.random() < crossover_prob:
-                toolbox.mate(child1, child2)
-                del child1.fitness.values
-                del child2.fitness.values
+                # Receive the individuals returned by staticLimit decorator
+                offspring[i], offspring[i+1] = toolbox.mate(offspring[i], offspring[i+1])
+                del offspring[i].fitness.values
+                del offspring[i+1].fitness.values
 
-        for mutant in offspring:
+        for i in range(len(offspring)):
             if random.random() < mutation_prob:
-                toolbox.mutate(mutant)
-                del mutant.fitness.values
+                # Receive the individual returned by staticLimit decorator
+                offspring[i], = toolbox.mutate(offspring[i])
+                del offspring[i].fitness.values
 
         # Evaluate the individuals with an invalid fitness
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
@@ -278,5 +286,12 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         
         # Save population for this generation
         save_population(pop, gen, individual_records_dir)
+        
+        # Call generation callback (e.g., for early stopping)
+        if generation_callback is not None:
+            should_stop = generation_callback(gen, pop, hof, logbook)
+            if should_stop:
+                print(f"\n⏹️  Evolution stopped by callback at generation {gen}")
+                break
     
     return pop, logbook, hof

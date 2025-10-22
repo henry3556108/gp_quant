@@ -149,7 +149,7 @@ def run_single_experiment(ticker, period_name,
     
     return results
 
-def run_all_experiments(max_workers=8):
+def run_all_experiments(max_workers=6):
     """
     Run all experiments for all tickers with parallel execution
     

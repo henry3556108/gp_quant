@@ -20,6 +20,7 @@ from deap import creator, base, gp
 
 from gp_quant.data.loader import load_and_process_data, split_train_test_data
 from gp_quant.evolution.engine import run_evolution
+from gp_quant.evolution.early_stopping import EarlyStopping
 from gp_quant.gp.operators import pset, NumVector
 from gp_quant.backtesting.engine import BacktestingEngine, PortfolioBacktestingEngine
 
@@ -106,11 +107,30 @@ def run_portfolio_evolution(args, data_dir):
         individual_records_dir = os.path.join(ticker_dir, f"individual_records_tmp_{pid}_{timestamp}")
         os.makedirs(individual_records_dir, exist_ok=True)
     
+    # Initialize early stopping (Paper requirement: stop if no improvement for 15 generations)
+    early_stopping = EarlyStopping(
+        patience=15,      # Paper requirement: 15 consecutive generations without improvement
+        min_delta=0.0,    # Any improvement counts
+        mode='max'        # Maximize fitness (excess return)
+    )
+    
+    def early_stop_callback(gen, pop, hof, logbook):
+        """Early stopping callback function"""
+        current_best = hof[0].fitness.values[0]
+        if early_stopping.step(current_best):
+            print(f"\n⏹️  Early Stopping Triggered!")
+            print(f"   No improvement for {early_stopping.patience} consecutive generations")
+            print(f"   Best fitness: ${early_stopping.best_fitness:,.2f}")
+            print(f"   Stopped at generation {gen}/{args.generations}")
+            return True  # Stop evolution
+        return False  # Continue evolution
+    
     pop, log, hof = run_evolution(
         data=train_data,  # Pass dictionary for portfolio mode
         n_generations=args.generations,
         population_size=args.population,
-        individual_records_dir=individual_records_dir
+        individual_records_dir=individual_records_dir,
+        generation_callback=early_stop_callback  # Add early stopping callback
     )
     
     best_individual = hof[0]
