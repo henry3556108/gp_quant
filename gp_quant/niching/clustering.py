@@ -8,7 +8,7 @@ Niching Clustering Module
 from typing import List, Union, Optional
 import numpy as np
 from sklearn.cluster import KMeans, AgglomerativeClustering
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, silhouette_samples
 
 
 class NichingClusterer:
@@ -46,6 +46,8 @@ class NichingClusterer:
         self.labels_ = None
         self.cluster_centers_ = None
         self.silhouette_score_ = None
+        self.silhouette_samples_ = None  # 每個樣本的 silhouette score
+        self.per_cluster_silhouette_ = None  # 每個 cluster 的平均 silhouette score
         
         # 驗證參數
         if self.algorithm not in ['kmeans', 'hierarchical']:
@@ -76,13 +78,36 @@ class NichingClusterer:
         
         # 計算 Silhouette 分數
         if len(np.unique(self.labels_)) > 1:
+            # 整體 silhouette score
             self.silhouette_score_ = silhouette_score(
                 distance_matrix, 
                 self.labels_, 
                 metric='precomputed'
             )
+            
+            # 每個樣本的 silhouette score
+            self.silhouette_samples_ = silhouette_samples(
+                distance_matrix,
+                self.labels_,
+                metric='precomputed'
+            )
+            
+            # 計算每個 cluster 的平均 silhouette score
+            self.per_cluster_silhouette_ = {}
+            for cluster_id in np.unique(self.labels_):
+                cluster_mask = self.labels_ == cluster_id
+                cluster_scores = self.silhouette_samples_[cluster_mask]
+                self.per_cluster_silhouette_[int(cluster_id)] = {
+                    'mean': float(np.mean(cluster_scores)),
+                    'std': float(np.std(cluster_scores)),
+                    'min': float(np.min(cluster_scores)),
+                    'max': float(np.max(cluster_scores)),
+                    'size': int(np.sum(cluster_mask))
+                }
         else:
             self.silhouette_score_ = 0.0
+            self.silhouette_samples_ = np.zeros(len(self.labels_))
+            self.per_cluster_silhouette_ = {}
         
         return self
     
