@@ -26,8 +26,274 @@ sys.path.insert(0, str(project_root))
 from gp_quant.backtesting.portfolio_engine import PortfolioBacktestingEngine
 from gp_quant.gp.operators import pset
 from gp_quant.evolution.early_stopping import EarlyStopping
+from gp_quant.evolution.engine import run_evolution
 from gp_quant.similarity import SimilarityMatrix, ParallelSimilarityMatrix
 from gp_quant.niching import NichingClusterer, CrossNicheSelector, create_k_selector
+
+
+def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selector, 
+                               generations_dir, evolution_log, niching_log):
+    """
+    創建 generation callback 函數來處理：
+    1. Niching 策略（相似度計算、聚類、跨群選擇）
+    2. 早停檢查
+    3. 日誌記錄
+    4. 族群儲存（cluster_labels）
+    
+    Returns:
+        callback function with signature: callback(gen, pop, hof, logbook, record) -> dict or bool
+    """
+    # 儲存 niching 狀態
+    niching_state = {
+        'niche_labels': None,
+        'selected_k': None,
+        'clusterer': None,
+        'similarity_matrix': None
+    }
+    
+    def callback(gen, pop, hof, logbook, record):
+        """Generation callback - 在每代評估後調用"""
+        gen_start_time = datetime.now()
+        
+        print(f"\n{'='*100}")
+        print(f"📊 Generation {gen}/{CONFIG['generations']}")
+        print(f"{'='*100}")
+        
+        # ====================================================================
+        # 顯示統計
+        # ====================================================================
+        min_fit = record['min']
+        avg_fit = record['avg']
+        max_fit = record['max']
+        std_fit = record['std']
+        
+        print(f"\n📈 Fitness 統計:")
+        print(f"   Min: {min_fit:.4f} ({min_fit*100:+.2f}%) | PnL: ${min_fit*CONFIG['initial_capital']:+,.0f}")
+        print(f"   Avg: {avg_fit:.4f} ({avg_fit*100:+.2f}%) | PnL: ${avg_fit*CONFIG['initial_capital']:+,.0f}")
+        print(f"   Max: {max_fit:.4f} ({max_fit*100:+.2f}%) | PnL: ${max_fit*CONFIG['initial_capital']:+,.0f}")
+        print(f"   Std: {std_fit:.4f}")
+        
+        # 記錄到日誌
+        gen_log = {
+            'generation': gen,
+            'min_fitness': float(min_fit),
+            'avg_fitness': float(avg_fit),
+            'max_fitness': float(max_fit),
+            'std_fitness': float(std_fit),
+            'timestamp': datetime.now().isoformat()
+        }
+        evolution_log.append(gen_log)
+        
+        # ====================================================================
+        # 早停檢查
+        # ====================================================================
+        if early_stopping is not None:
+            current_best = hof[0].fitness.values[0]
+            
+            if early_stopping.step(current_best):
+                print(f"\n⏹️  早停觸發！")
+                print(f"   連續 {early_stopping.counter} 代無顯著進步")
+                print(f"   最佳 fitness: {early_stopping.best_fitness:.4f}")
+                print(f"   最終 generation: {gen}/{CONFIG['generations']}")
+                
+                # 記錄早停資訊
+                gen_log['early_stopped'] = True
+                gen_log['early_stop_reason'] = f'No improvement for {early_stopping.counter} generations'
+                
+                # 儲存最終族群（帶 cluster_labels）
+                _save_generation_with_niching(gen, pop, hof, record, niching_state, 
+                                             generations_dir, CONFIG, is_final=True)
+                
+                return {'stop': True}  # 停止演化
+            else:
+                # 顯示早停狀態
+                if gen > 1:
+                    print(f"\n⏸️  早停狀態: {early_stopping.counter}/{early_stopping.patience} 代無進步")
+        
+        # ====================================================================
+        # 儲存當前世代的族群（帶 cluster_labels）
+        # ====================================================================
+        _save_generation_with_niching(gen, pop, hof, record, niching_state, 
+                                     generations_dir, CONFIG, is_final=False)
+        
+        # 顯示最佳個體
+        best_ind = hof[0]
+        print(f"\n🏆 當前最佳個體:")
+        print(f"   Fitness: {best_ind.fitness.values[0]:.4f} ({best_ind.fitness.values[0]*100:+.2f}%)")
+        print(f"   PnL: ${best_ind.fitness.values[0]*CONFIG['initial_capital']:+,.0f}")
+        print(f"   深度: {best_ind.height}, 節點數: {len(best_ind)}")
+        print(f"   規則: {str(best_ind)[:100]}{'...' if len(str(best_ind)) > 100 else ''}")
+        
+        # ====================================================================
+        # Niching: 計算相似度矩陣並聚類（如果啟用且不是最後一代）
+        # ====================================================================
+        custom_selector = None
+        
+        if CONFIG['niching_enabled'] and gen < CONFIG['generations']:
+            if gen % CONFIG['niching_update_frequency'] == 0:
+                print(f"\n🔬 Niching: 計算相似度矩陣...")
+                sim_start = datetime.now()
+                
+                try:
+                    # 計算相似度矩陣
+                    if len(pop) >= 200:
+                        sim_matrix = ParallelSimilarityMatrix(pop, n_workers=8)
+                        similarity_matrix = sim_matrix.compute(show_progress=False)
+                    else:
+                        sim_matrix = SimilarityMatrix(pop)
+                        similarity_matrix = sim_matrix.compute(show_progress=False)
+                    
+                    sim_time = (datetime.now() - sim_start).total_seconds()
+                    
+                    print(f"   ✓ 相似度矩陣計算完成 ({sim_time:.1f}s)")
+                    print(f"   平均相似度: {sim_matrix.get_average_similarity():.4f}")
+                    print(f"   多樣性分數: {sim_matrix.get_diversity_score():.4f}")
+                    
+                    niching_state['similarity_matrix'] = similarity_matrix
+                    
+                    # 動態選擇 k 值
+                    if k_selector is not None:
+                        print(f"\n🎯 選擇 K 值...")
+                        k_result = k_selector.select_k(
+                            similarity_matrix,
+                            population_size=len(pop),
+                            generation=gen,
+                            fitness_values=[ind.fitness.values[0] for ind in pop]
+                        )
+                        
+                        selected_k = k_result['selected_k']
+                        niching_state['selected_k'] = selected_k
+                        
+                        print(f"   ✓ 選擇 K = {selected_k}")
+                        if 'reason' in k_result:
+                            print(f"   原因: {k_result['reason']}")
+                    else:
+                        selected_k = CONFIG['niching_n_clusters']
+                        niching_state['selected_k'] = selected_k
+                    
+                    # 聚類
+                    print(f"\n🎨 聚類（K={selected_k}）...")
+                    cluster_start = datetime.now()
+                    
+                    clusterer = NichingClusterer(
+                        n_clusters=selected_k,
+                        algorithm=CONFIG['niching_algorithm'],
+                        random_state=42
+                    )
+                    
+                    niche_labels = clusterer.fit_predict(similarity_matrix)
+                    niching_state['niche_labels'] = niche_labels
+                    niching_state['clusterer'] = clusterer
+                    
+                    cluster_time = (datetime.now() - cluster_start).total_seconds()
+                    
+                    print(f"   ✓ 聚類完成 ({cluster_time:.1f}s)")
+                    
+                    # 顯示聚類統計
+                    unique_labels, counts = np.unique(niche_labels, return_counts=True)
+                    print(f"   Niche 分布: {dict(zip(unique_labels.tolist(), counts.tolist()))}")
+                    
+                    if clusterer.silhouette_score_ is not None:
+                        print(f"   Silhouette Score: {clusterer.silhouette_score_:.4f}")
+                    
+                    # 記錄 niching 統計
+                    niching_log.append({
+                        'generation': gen,
+                        'n_clusters': int(selected_k),
+                        'silhouette_score': float(clusterer.silhouette_score_) if clusterer.silhouette_score_ is not None else None,
+                        'avg_similarity': float(sim_matrix.get_average_similarity()),
+                        'diversity_score': float(sim_matrix.get_diversity_score()),
+                        'niche_distribution': {int(k): int(v) for k, v in zip(unique_labels, counts)},
+                        'computation_time': sim_time + cluster_time
+                    })
+                    
+                    # 創建自定義 selector（使用跨群選擇）
+                    def niching_custom_selector(population, generation):
+                        """使用 Niching 的自定義選擇器"""
+                        print(f"\n🎯 使用跨群選擇...")
+                        try:
+                            offspring = niching_selector.select(population, niching_state['niche_labels'], len(population))
+                            
+                            # 顯示選擇統計
+                            selection_stats = niching_selector.get_statistics()
+                            print(f"   ✓ 選擇完成")
+                            print(f"   跨群配對: {selection_stats['cross_niche_pairs']} ({selection_stats['cross_niche_ratio_actual']:.0%})")
+                            print(f"   群內配對: {selection_stats['within_niche_pairs']} ({selection_stats['within_niche_ratio_actual']:.0%})")
+                            
+                            # 記錄選擇統計
+                            if evolution_log:
+                                evolution_log[-1]['niching_selection'] = {
+                                    'cross_niche_pairs': selection_stats['cross_niche_pairs'],
+                                    'within_niche_pairs': selection_stats['within_niche_pairs'],
+                                    'cross_niche_ratio': selection_stats['cross_niche_ratio_actual']
+                                }
+                            
+                            return offspring
+                        except Exception as e:
+                            print(f"   ✗ 跨群選擇失敗: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            # 失敗時使用 tournament selection
+                            return tools.selTournament(population, len(population), tournsize=CONFIG['tournament_size'])
+                    
+                    custom_selector = niching_custom_selector
+                    
+                except Exception as e:
+                    print(f"   ✗ Niching 失敗: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    niching_state['niche_labels'] = None
+        
+        # 顯示世代耗時
+        gen_time = (datetime.now() - gen_start_time).total_seconds()
+        print(f"\n⏱️  Generation {gen} 耗時: {gen_time:.1f}s")
+        
+        # 返回結果
+        if custom_selector is not None:
+            return {'custom_selector': custom_selector}
+        else:
+            return None  # 繼續使用默認 selector
+    
+    def _save_generation_with_niching(gen, pop, hof, record, niching_state, 
+                                     generations_dir, CONFIG, is_final=False):
+        """儲存族群快照（包含 cluster_labels）"""
+        suffix = '_final' if is_final else ''
+        gen_file = generations_dir / f"generation_{gen:03d}{suffix}.pkl"
+        
+        print(f"\n💾 儲存 Generation {gen} 族群...")
+        
+        try:
+            gen_data = {
+                'generation': gen,
+                'population': pop,
+                'hall_of_fame': list(hof),
+                'statistics': record,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            if is_final:
+                gen_data['early_stopped'] = True
+            
+            # 如果有 niching 資訊，一併儲存
+            if CONFIG['niching_enabled'] and niching_state['niche_labels'] is not None:
+                gen_data['cluster_labels'] = niching_state['niche_labels'].tolist() if hasattr(niching_state['niche_labels'], 'tolist') else list(niching_state['niche_labels'])
+                gen_data['niching_info'] = {
+                    'n_clusters': int(niching_state['selected_k']) if niching_state['selected_k'] is not None else CONFIG['niching_n_clusters'],
+                    'algorithm': CONFIG['niching_algorithm'],
+                    'silhouette_score': float(niching_state['clusterer'].silhouette_score_) if niching_state['clusterer'] is not None and niching_state['clusterer'].silhouette_score_ is not None else None
+                }
+            
+            with open(gen_file, 'wb') as f:
+                dill.dump(gen_data, f)
+            
+            file_size = gen_file.stat().st_size / (1024 * 1024)
+            print(f"   ✓ 已儲存: {gen_file.name} ({file_size:.2f} MB)")
+            
+        except Exception as e:
+            print(f"   ✗ 儲存失敗: {e}")
+    
+    return callback
+
 
 def main():
     print("="*100)
