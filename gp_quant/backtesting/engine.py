@@ -673,10 +673,12 @@ class PortfolioBacktestingEngine:
         equity_curves = []
         
         # Compile the GP tree once (not per ticker) for performance
+        # Use the pset from the first engine (all engines share the same pset)
+        first_engine = self.engines[self.tickers[0]]
         try:
-            rule = gp.compile(expr=individual, pset=self.pset)
+            rule = gp.compile(expr=individual, pset=first_engine.pset)
         except Exception as e:
-            return -100000.0  # Penalty for compilation errors
+            return -100000.0,  # Penalty for compilation errors (return tuple!)
         
         for ticker in self.tickers:
             engine = self.engines[ticker]
@@ -712,11 +714,11 @@ class PortfolioBacktestingEngine:
                             signals = np.nan_to_num(signals, nan=0.0, posinf=0.0, neginf=0.0)
                         signals = signals.astype(np.bool_)
                     except Exception:
-                        return -100000.0
+                        return -100000.0,
                 else:
-                    return -100000.0
+                    return -100000.0,
             except Exception:
-                return -100000.0
+                return -100000.0,
             
             # Slice signals to match backtest_data period using mask
             if engine.backtest_start or engine.backtest_end:
