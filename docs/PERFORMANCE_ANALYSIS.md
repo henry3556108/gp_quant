@@ -1,258 +1,296 @@
-# 性能分析：Niching 相似度矩陣計算
+# 性能問題分析：為什麼一個 Generation 從 5 分鐘變成 15 分鐘？
 
-## 🐌 問題描述
+## 🔍 問題描述
 
-**症狀**：啟用 Niching 後，每個 generation 的時間從 5 分鐘增加到 15 分鐘（3倍慢）
+**觀察到的現象**：
+- **之前**：一個 generation 約 5 分鐘
+- **現在**：一個 generation 約 15 分鐘
+- **差異**：慢了 **3 倍**！
 
-**原因**：相似度矩陣計算開銷過大
+**特別慢的部分**：Similarity Matrix 計算
 
 ---
 
-## 📊 性能瓶頸分析
+## 🎯 根本原因
 
-### 計算複雜度
+### 原因 1：`sharpe_ratio` 比 `excess_return` 慢很多 ⚠️
+
+#### 計算複雜度對比
+
+| Fitness Metric | 計算步驟 | 複雜度 |
+|---------------|---------|--------|
+| **excess_return** | 1. 運行向量化模擬<br>2. 計算 B&H return<br>3. 相減 | **O(n)** |
+| **sharpe_ratio** | 1. 運行向量化模擬<br>2. **生成完整 equity curve**<br>3. 計算每日 returns<br>4. 計算 mean/std<br>5. 年化 Sharpe | **O(n) + 額外開銷** |
+
+#### Portfolio 版本更慢！
+
+對於 **PortfolioBacktestingEngine**，使用 `sharpe_ratio` 時：
+
+```python
+def _calculate_portfolio_sharpe(self, individual):
+    equity_curves = []
+    
+    for ticker in self.tickers:  # 4 個股票
+        engine = self.engines[ticker]
+        
+        # 每個股票都要：
+        # 1. get_signals(individual) - 編譯並執行 GP tree
+        # 2. _run_simulation_with_equity_curve() - 生成完整 equity curve
+        
+        equity_curve = engine._run_simulation_with_equity_curve(
+            engine.get_signals(individual),
+            engine.backtest_data
+        )
+        equity_curves.append(equity_curve)
+    
+    # 然後合併並計算 Sharpe
+    combined_equity = pd.concat(equity_curves, axis=1).sum(axis=1)
+    returns = combined_equity.pct_change().dropna()
+    sharpe = (mean_return * 252) / (std_return * np.sqrt(252))
+```
+
+**關鍵問題**：
+- 每個個體評估時，**每個股票都要調用 `get_signals()`**
+- `get_signals()` 會**重新編譯並執行 GP tree**
+- 對於 4 個股票的組合，這意味著**每個個體要編譯執行 4 次**！
+
+#### 時間估算
+
+假設：
+- Population size: 5000
+- Tickers: 4
+- 每次 `get_signals()` + `_run_simulation_with_equity_curve()`: 0.01 秒
+
+**使用 sharpe_ratio**：
+```
+每個 generation = 5000 individuals × 4 tickers × 0.01s = 200 秒 ≈ 3.3 分鐘
+```
+
+**使用 excess_return**（舊版本）：
+```
+每個 generation = 5000 individuals × 1 次評估 × 0.005s = 25 秒
+```
+
+但實際上還有其他開銷（Niching、聚類等），所以：
+- **sharpe_ratio**: 3.3 分鐘 + 開銷 → **約 5-7 分鐘**
+- **excess_return**: 25 秒 + 開銷 → **約 1-2 分鐘**
+
+---
+
+### 原因 2：Similarity Matrix 計算變慢
+
+你從 `n_workers=8` 改成 `n_workers=6`，這會讓相似度矩陣計算變慢約 **25-33%**。
+
+#### 計算量
 
 對於 population_size = 5000：
-
 ```
-相似度矩陣大小 = 5000 × 5000 = 25,000,000 個元素
-每次計算需要比較兩個 GP 樹的結構相似度
+相似度矩陣大小 = 5000 × 5000 = 25,000,000 個比較
 ```
 
-### 時間分解（估算）
+即使使用並行計算，這仍然是一個巨大的計算量。
 
-| 階段 | 時間 | 說明 |
-|------|------|------|
-| **Fitness 評估** | ~3 分鐘 | 5000 個體 × 4 股票回測 |
-| **相似度矩陣** | ~10 分鐘 | 25M 次樹比較（當 frequency=1） |
-| **聚類 + 選擇** | ~1 分鐘 | K-means 聚類 |
-| **交叉變異** | ~1 分鐘 | 遺傳操作 |
-| **總計** | ~15 分鐘 | |
+#### 時間估算
 
-**關鍵發現**：相似度矩陣計算佔用 **~67%** 的時間！
+根據你的日誌（archive/portfolio_exp_sharpe_20251023_125111）：
+- Generation 1 eval_time: 121 秒（約 2 分鐘）
+
+但你說總共要 15 分鐘，這意味著：
+```
+15 分鐘 - 2 分鐘（評估）= 13 分鐘（其他開銷）
+```
+
+這 13 分鐘很可能花在：
+1. **Similarity Matrix 計算**（最大開銷）
+2. Niching 聚類
+3. 跨群選擇
+4. 族群儲存
 
 ---
 
-## ⚡ 優化方案
+## 🔧 解決方案
 
-### 方案 A：降低更新頻率（推薦）✅
+### 方案 1：優化 `sharpe_ratio` 計算（推薦）⭐
 
-**原理**：相似度矩陣不需要每代都重新計算
+**問題**：每個股票都重新編譯執行 GP tree
 
-```python
-'niching_update_frequency': 5  # 每 5 代更新一次（而非每代）
-```
-
-**效果**：
-- Generation 1, 6, 11, 16, ... → 15 分鐘（需計算矩陣）
-- Generation 2-5, 7-10, ... → 5 分鐘（重用舊矩陣）
-- **平均每代**：(15 + 5×4) / 5 = **7 分鐘**（提升 53%）
-
-**理由**：
-- 族群結構在短期內變化不大
-- 重用舊矩陣仍能有效維持多樣性
-- 文獻建議：5-10 代更新一次即可
-
-### 方案 B：增加並行 Workers
+**解決**：快取 signals
 
 ```python
-# 當前
-sim_matrix = ParallelSimilarityMatrix(pop, n_workers=6)
-
-# 優化（如果你有 8+ 核心）
-sim_matrix = ParallelSimilarityMatrix(pop, n_workers=8)
-```
-
-**效果**：
-- 6 workers → 8 workers：提升 ~25%
-- 矩陣計算時間：10 分鐘 → 7.5 分鐘
-
-**注意**：workers 數量不要超過 CPU 核心數
-
-### 方案 C：採樣計算（實驗性）
-
-```python
-# 不計算完整矩陣，只採樣部分個體
-if len(pop) > 1000:
-    sample_size = 1000
-    sample_indices = random.sample(range(len(pop)), sample_size)
-    sample_pop = [pop[i] for i in sample_indices]
-    sim_matrix = ParallelSimilarityMatrix(sample_pop, n_workers=8)
-```
-
-**效果**：
-- 5000 → 1000：計算量減少 96%
-- 矩陣計算時間：10 分鐘 → 0.4 分鐘
-
-**風險**：可能影響聚類質量
-
-### 方案 D：關閉 Niching（如果不需要）
-
-```python
-'niching_enabled': False
-```
-
-**效果**：
-- 每代時間：15 分鐘 → 5 分鐘
-- 但失去多樣性維持機制
-
----
-
-## 📈 推薦配置
-
-### 大規模實驗（5000 個體，50 代）
-
-```python
-CONFIG = {
-    'population_size': 5000,
-    'generations': 50,
+def _calculate_portfolio_sharpe(self, individual):
+    # 只編譯一次 GP tree
+    price_vec = self.engines[self.tickers[0]].data['Close'].to_numpy()
+    volume_vec = self.engines[self.tickers[0]].data['Volume'].to_numpy()
     
-    # Niching 配置（優化後）
-    'niching_enabled': True,
-    'niching_update_frequency': 5,      # ✅ 每 5 代更新（而非 1）
-    'niching_n_clusters': 3,
-    'niching_cross_ratio': 0.8,
-}
-
-# 相似度矩陣計算
-sim_matrix = ParallelSimilarityMatrix(pop, n_workers=8)  # ✅ 使用 8 workers
-```
-
-**預期性能**：
-- 平均每代：~7 分鐘
-- 總時間：50 代 × 7 分鐘 = **~6 小時**（vs 原本 12.5 小時）
-
-### 中規模實驗（1000 個體，30 代）
-
-```python
-CONFIG = {
-    'population_size': 1000,
-    'generations': 30,
+    # 編譯規則（只做一次）
+    rule = gp.compile(expr=individual, pset=self.pset)
     
-    'niching_enabled': True,
-    'niching_update_frequency': 3,      # 更頻繁更新（族群小）
-    'niching_n_clusters': 3,
-}
-
-# 相似度矩陣計算
-sim_matrix = ParallelSimilarityMatrix(pop, n_workers=4)
-```
-
-**預期性能**：
-- 平均每代：~2 分鐘
-- 總時間：30 代 × 2 分鐘 = **~1 小時**
-
----
-
-## 🔬 實驗驗證
-
-### 測試 1：不同更新頻率的影響
-
-| Update Frequency | 平均每代時間 | 總時間 (50代) | 多樣性分數 |
-|------------------|-------------|--------------|-----------|
-| 1 (每代)         | 15 分鐘     | 12.5 小時    | 0.85      |
-| 3                | 9 分鐘      | 7.5 小時     | 0.83      |
-| 5 ✅             | 7 分鐘      | 5.8 小時     | 0.81      |
-| 10               | 5.5 分鐘    | 4.6 小時     | 0.78      |
-| ∞ (關閉)         | 5 分鐘      | 4.2 小時     | 0.65      |
-
-**結論**：`update_frequency=5` 是最佳平衡點
-
-### 測試 2：Workers 數量的影響
-
-| Workers | 矩陣計算時間 | CPU 使用率 |
-|---------|-------------|-----------|
-| 1       | 40 分鐘     | 12.5%     |
-| 4       | 12 分鐘     | 50%       |
-| 6       | 10 分鐘     | 75%       |
-| 8 ✅    | 7.5 分鐘   | 100%      |
-| 12      | 7.5 分鐘   | 100%      |
-
-**結論**：8 workers 已達到最佳（假設 8 核 CPU）
-
----
-
-## 💡 其他優化建議
-
-### 1. 使用更快的相似度算法
-
-當前使用的是樹編輯距離（Tree Edit Distance），可以考慮：
-
-```python
-# 選項 A：基於深度的快速相似度
-def fast_similarity(tree1, tree2):
-    return 1.0 / (1.0 + abs(tree1.height - tree2.height))
-
-# 選項 B：基於節點數的快速相似度
-def fast_similarity(tree1, tree2):
-    return 1.0 / (1.0 + abs(len(tree1) - len(tree2)))
-```
-
-**效果**：計算速度提升 100-1000 倍，但精度降低
-
-### 2. 快取機制
-
-```python
-# 快取已計算的相似度
-similarity_cache = {}
-
-def cached_similarity(tree1, tree2):
-    key = (id(tree1), id(tree2))
-    if key not in similarity_cache:
-        similarity_cache[key] = compute_similarity(tree1, tree2)
-    return similarity_cache[key]
-```
-
-### 3. GPU 加速（未來）
-
-使用 CUDA 或 OpenCL 加速矩陣計算
-
----
-
-## 📝 當前配置（已優化）
-
-```python
-# run_portfolio_experiment.py
-CONFIG = {
-    'population_size': 5000,
-    'generations': 50,
+    equity_curves = []
+    for ticker in self.tickers:
+        engine = self.engines[ticker]
+        
+        # 使用已編譯的規則直接計算 signals
+        engine.pset.terminals[NumVector][0].value = engine.data['Close'].to_numpy()
+        engine.pset.terminals[NumVector][1].value = engine.data['Volume'].to_numpy()
+        signals = rule()
+        
+        # 切片到回測期
+        if engine.backtest_start or engine.backtest_end:
+            mask = pd.Series(True, index=engine.data.index)
+            if engine.backtest_start:
+                mask &= (engine.data.index >= engine.backtest_start)
+            if engine.backtest_end:
+                mask &= (engine.data.index <= engine.backtest_end)
+            backtest_signals = signals[mask.values]
+        else:
+            backtest_signals = signals
+        
+        equity_curve = engine._run_simulation_with_equity_curve(
+            backtest_signals,
+            engine.backtest_data
+        )
+        equity_curves.append(equity_curve)
     
-    'niching_enabled': True,
-    'niching_update_frequency': 5,      # ✅ 優化：從 1 改為 5
-    'niching_n_clusters': 3,
-    'niching_cross_ratio': 0.8,
-}
-
-# 相似度矩陣計算
-if len(pop) >= 200:
-    sim_matrix = ParallelSimilarityMatrix(pop, n_workers=8)  # ✅ 優化：從 6 改為 8
+    # 合併並計算 Sharpe
+    combined_equity = pd.concat(equity_curves, axis=1).sum(axis=1)
+    returns = combined_equity.pct_change().dropna()
+    sharpe = (mean_return * 252) / (std_return * np.sqrt(252))
+    return sharpe
 ```
 
 **預期改善**：
-- 每代時間：15 分鐘 → 7 分鐘（提升 53%）
-- 總實驗時間：12.5 小時 → 5.8 小時（提升 54%）
+- 從 4 次編譯 → 1 次編譯
+- 速度提升：**約 3-4 倍**
+- Generation 時間：15 分鐘 → **約 4-5 分鐘**
 
 ---
 
-## 🎯 總結
+### 方案 2：減少 Similarity Matrix 計算頻率
 
-### 問題根源
-- ✅ Niching 啟用（舊版本關閉）
-- ✅ 每代都計算相似度矩陣（update_frequency=1）
-- ✅ Workers 數量不足（6 vs 8）
+**當前設置**：
+```python
+'niching_update_frequency': 1,  # 每 1 代重新計算
+```
 
-### 解決方案
-- ✅ 降低更新頻率：1 → 5
-- ✅ 增加 workers：6 → 8
-- ✅ 預期提升：53% 性能改善
+**建議**：
+```python
+'niching_update_frequency': 3,  # 每 3 代重新計算
+```
 
-### 下一步
-1. 運行優化後的配置
-2. 監控實際性能
-3. 根據結果微調 update_frequency（3-10 之間）
+**理由**：
+- 族群結構不會每代都劇烈變化
+- 相似度矩陣計算非常昂貴（5000×5000）
+- 每 3 代更新一次足夠
+
+**預期改善**：
+- 減少 66% 的相似度矩陣計算
+- Generation 時間：15 分鐘 → **約 7-8 分鐘**（平均）
 
 ---
 
-**更新日期**：2025-10-24  
-**作者**：Cascade AI  
-**狀態**：✅ 已優化
+### 方案 3：使用採樣相似度矩陣
+
+對於大族群（>1000），不需要計算完整的 5000×5000 矩陣。
+
+**建議**：
+```python
+if len(pop) > 1000:
+    # 採樣 1000 個代表性個體
+    sample_indices = np.random.choice(len(pop), 1000, replace=False)
+    sample_pop = [pop[i] for i in sample_indices]
+    
+    # 只計算 1000×1000 矩陣
+    sim_matrix = ParallelSimilarityMatrix(sample_pop, n_workers=6)
+    similarity_matrix = sim_matrix.compute(show_progress=False)
+    
+    # 使用 KNN 將其他個體分配到最近的 cluster
+    # ...
+```
+
+**預期改善**：
+- 計算量：25,000,000 → 1,000,000（減少 96%）
+- Similarity Matrix 時間：13 分鐘 → **約 30 秒**
+- Generation 時間：15 分鐘 → **約 2.5 分鐘**
+
+---
+
+### 方案 4：改回 `excess_return`（最簡單）
+
+如果你不需要 Sharpe Ratio 作為 fitness：
+
+```python
+'fitness_metric': 'excess_return',
+```
+
+**預期改善**：
+- 立即恢復到之前的速度
+- Generation 時間：15 分鐘 → **約 5 分鐘**
+
+---
+
+## 📊 方案比較
+
+| 方案 | 難度 | 預期改善 | 最終時間 | 推薦度 |
+|------|------|---------|---------|--------|
+| **1. 優化 sharpe_ratio** | 中 | 3-4x | 4-5 分鐘 | ⭐⭐⭐⭐⭐ |
+| **2. 減少更新頻率** | 低 | 2x（平均） | 7-8 分鐘 | ⭐⭐⭐ |
+| **3. 採樣相似度矩陣** | 高 | 6x | 2.5 分鐘 | ⭐⭐⭐⭐ |
+| **4. 改回 excess_return** | 極低 | 3x | 5 分鐘 | ⭐⭐ |
+| **組合 1+2** | 中 | 6-8x | 2-3 分鐘 | ⭐⭐⭐⭐⭐ |
+| **組合 1+3** | 高 | 12-15x | 1-2 分鐘 | ⭐⭐⭐⭐⭐ |
+
+---
+
+## 🎯 推薦行動方案
+
+### 短期（立即可做）
+
+1. **減少 Niching 更新頻率**
+   ```python
+   'niching_update_frequency': 3,  # 從 1 改成 3
+   ```
+
+2. **恢復 n_workers**
+   ```python
+   sim_matrix = ParallelSimilarityMatrix(pop, n_workers=8)  # 從 6 改回 8
+   ```
+
+**預期改善**：15 分鐘 → **約 6-7 分鐘**
+
+### 中期（1-2 小時實作）
+
+3. **優化 sharpe_ratio 計算**
+   - 實作方案 1 的快取邏輯
+   - 避免重複編譯 GP tree
+
+**預期改善**：15 分鐘 → **約 3-4 分鐘**
+
+### 長期（未來優化）
+
+4. **實作採樣相似度矩陣**
+   - 對大族群使用採樣
+   - 使用 KNN 分配
+
+**預期改善**：15 分鐘 → **約 1-2 分鐘**
+
+---
+
+## 📝 總結
+
+你的性能問題主要來自兩個原因：
+
+1. **`sharpe_ratio` 對 Portfolio 特別慢**（約 3-4 倍）
+   - 每個股票都重新編譯執行 GP tree
+   - 需要生成完整 equity curve
+
+2. **Similarity Matrix 計算非常昂貴**
+   - 5000×5000 = 25,000,000 次比較
+   - 每代都計算（frequency=1）
+   - 只用 6 個 workers
+
+**最佳解決方案**：
+- 短期：調整 `niching_update_frequency` 和 `n_workers`
+- 中期：優化 `sharpe_ratio` 計算（快取編譯結果）
+- 長期：實作採樣相似度矩陣
+
+這樣可以將 generation 時間從 **15 分鐘降到 2-3 分鐘**！🚀

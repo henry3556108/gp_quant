@@ -672,10 +672,52 @@ class PortfolioBacktestingEngine:
         # Get equity curves from all tickers
         equity_curves = []
         
+        # Compile the GP tree once (not per ticker) for performance
+        try:
+            rule = gp.compile(expr=individual, pset=self.pset)
+        except Exception as e:
+            return -100000.0  # Penalty for compilation errors
+        
         for ticker in self.tickers:
             engine = self.engines[ticker]
-            # Get signals for the full data
-            full_signals = engine.get_signals(individual)
+            
+            # Inject ticker-specific data into terminals
+            price_vec = engine.data['Close'].to_numpy()
+            volume_vec = engine.data['Volume'].to_numpy()
+            engine.pset.terminals[NumVector][0].value = price_vec
+            engine.pset.terminals[NumVector][1].value = volume_vec
+            
+            # Execute the pre-compiled rule
+            try:
+                signals = rule()
+                
+                # Handle single boolean return
+                if not isinstance(signals, np.ndarray):
+                    signals = np.full(engine.data.shape[0], signals, dtype=np.bool_)
+                
+                # Sanitize signals
+                if not np.all(np.isfinite(signals)):
+                    signals = np.nan_to_num(signals, nan=0.0, posinf=0.0, neginf=0.0)
+                
+                signals = signals.astype(np.bool_)
+                
+            except TypeError as e:
+                # Try with arguments (for loaded individuals)
+                if "missing" in str(e) and "required positional arguments" in str(e):
+                    try:
+                        signals = rule(price_vec, volume_vec)
+                        if not isinstance(signals, np.ndarray):
+                            signals = np.full(engine.data.shape[0], signals, dtype=np.bool_)
+                        if not np.all(np.isfinite(signals)):
+                            signals = np.nan_to_num(signals, nan=0.0, posinf=0.0, neginf=0.0)
+                        signals = signals.astype(np.bool_)
+                    except Exception:
+                        return -100000.0
+                else:
+                    return -100000.0
+            except Exception:
+                return -100000.0
+            
             # Slice signals to match backtest_data period using mask
             if engine.backtest_start or engine.backtest_end:
                 mask = pd.Series(True, index=engine.data.index)
@@ -683,9 +725,9 @@ class PortfolioBacktestingEngine:
                     mask &= (engine.data.index >= engine.backtest_start)
                 if engine.backtest_end:
                     mask &= (engine.data.index <= engine.backtest_end)
-                backtest_signals = full_signals[mask.values]
+                backtest_signals = signals[mask.values]
             else:
-                backtest_signals = full_signals
+                backtest_signals = signals
             
             equity_curve = engine._run_simulation_with_equity_curve(
                 backtest_signals,
