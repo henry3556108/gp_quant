@@ -381,16 +381,28 @@ def main():
                 gen_file = generations_dir / f"generation_{gen+1:03d}_final.pkl"
                 
                 try:
+                    # 準備儲存的資料
+                    final_gen_data = {
+                        'generation': gen + 1,
+                        'population': population,
+                        'hall_of_fame': list(hof),
+                        'statistics': record,
+                        'early_stopped': True,
+                        'early_stopping_status': early_stopping.get_status(),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # 如果有 niching 資訊，一併儲存
+                    if CONFIG['niching_enabled'] and niche_labels is not None:
+                        final_gen_data['cluster_labels'] = niche_labels.tolist() if hasattr(niche_labels, 'tolist') else list(niche_labels)
+                        final_gen_data['niching_info'] = {
+                            'n_clusters': int(selected_k) if 'selected_k' in locals() else CONFIG['niching_n_clusters'],
+                            'algorithm': CONFIG['niching_algorithm'],
+                            'silhouette_score': float(clusterer.silhouette_score_) if 'clusterer' in locals() and clusterer.silhouette_score_ is not None else None
+                        }
+                    
                     with open(gen_file, 'wb') as f:
-                        dill.dump({
-                            'generation': gen + 1,
-                            'population': population,
-                            'hall_of_fame': list(hof),
-                            'statistics': record,
-                            'early_stopped': True,
-                            'early_stopping_status': early_stopping.get_status(),
-                            'timestamp': datetime.now().isoformat()
-                        }, f)
+                        dill.dump(final_gen_data, f)
                     
                     file_size = gen_file.stat().st_size / (1024 * 1024)
                     print(f"   ✓ 已儲存: {gen_file.name} ({file_size:.2f} MB)")
@@ -411,15 +423,27 @@ def main():
         gen_file = generations_dir / f"generation_{gen+1:03d}.pkl"
         
         try:
+            # 準備儲存的資料
+            gen_data = {
+                'generation': gen + 1,
+                'population': population,
+                'hall_of_fame': list(hof),
+                'statistics': record,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # 如果有 niching 資訊，一併儲存
+            if CONFIG['niching_enabled'] and niche_labels is not None:
+                gen_data['cluster_labels'] = niche_labels.tolist() if hasattr(niche_labels, 'tolist') else list(niche_labels)
+                gen_data['niching_info'] = {
+                    'n_clusters': int(selected_k) if 'selected_k' in locals() else CONFIG['niching_n_clusters'],
+                    'algorithm': CONFIG['niching_algorithm'],
+                    'silhouette_score': float(clusterer.silhouette_score_) if 'clusterer' in locals() and clusterer.silhouette_score_ is not None else None
+                }
+            
             # 儲存整個族群
             with open(gen_file, 'wb') as f:
-                dill.dump({
-                    'generation': gen + 1,
-                    'population': population,
-                    'hall_of_fame': list(hof),
-                    'statistics': record,
-                    'timestamp': datetime.now().isoformat()
-                }, f)
+                dill.dump(gen_data, f)
             
             file_size = gen_file.stat().st_size / (1024 * 1024)  # MB
             print(f"   ✓ 已儲存: {gen_file.name} ({file_size:.2f} MB)")
