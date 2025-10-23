@@ -1,0 +1,40 @@
+{
+  "individual": "gt(ROC(ROC(ARG1, 124), id_int(115)), norm(ROC(ROC(norm(ROC(ARG1, 136), RSI(norm(min(norm(ROC(mul(sub(ROC(ARG0, 35), avg(avg(min(ARG1, id_int(156)), 102), 117)), ARG1), id_int(191)), ARG1), id_int(110)), div(min(add(min(max(ARG1, 31), id_int(id_int(id_int(79)))), RSI(ARG0, id_int(id_int(76)))), id_int(110)), max(ARG1, id_int(176)))), 149)), 102), 48), max(div(norm(lag(lag(div(RSI(ARG0, id_int(191)), ARG0), 12), 99), ROC(mul(div(ARG1, div(ARG1, ARG1)), avg(div(div(ARG1, min(vol(lag(vol(avg(norm(ARG0, min(vol(lag(ARG0, id_int(175)), id_int(19)), id_int(id_int(115)))), 191), 124), id_int(id_int(141))), id_int(124)), 175)), max(ARG0, 115)), 14)), id_int(123))), min(ARG1, id_int(124))), 110)))",
+  "train_fitness": 3.4163855856424084,
+  "train_metrics": {
+    "total_return": 0.7524047960853577,
+    "excess_return": 0.7524047960853577,
+    "sharpe_ratio": 3.4163855856424092,
+    "max_drawdown": -0.022246760697894396,
+    "volatility": 0.08314619287737025,
+    "calmar_ratio": 14.521179233629478,
+    "win_rate": 0.2003968253968254,
+    "final_value": 175240.47960853577,
+    "pnl": 75240.47960853577
+  },
+  "train_per_stock_pnl": {
+    "ABX.TO": 36387.92330360414,
+    "BBD-B.TO": 28899.76527404783,
+    "RY.TO": 8023.3877720832825,
+    "TRP.TO": 1929.4032588005066
+  },
+  "train_total_trades": 248,
+  "test_metrics": {
+    "total_return": 0.00670638135433197,
+    "excess_return": 0.00670638135433197,
+    "sharpe_ratio": 0.08163589325357921,
+    "max_drawdown": -0.11478097700410639,
+    "volatility": 0.08109317676433918,
+    "calmar_ratio": 0.02916500271635302,
+    "win_rate": 0.13916500994035785,
+    "final_value": 100670.6381354332,
+    "pnl": 670.638135433197
+  },
+  "test_per_stock_pnl": {
+    "ABX.TO": -293.26264762879146,
+    "BBD-B.TO": 2608.5473022460974,
+    "RY.TO": 983.254313945763,
+    "TRP.TO": -2627.9008331298865
+  },
+  "test_total_trades": 234
+}

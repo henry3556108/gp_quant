@@ -1,0 +1,22 @@
+{
+  "individual": "lt(max(min(ARG0, 70), 179), mul(ARG0, ROC(avg(vol(mul(ARG0, ARG0), id_int(70)), 57), id_int(id_int(id_int(46))))))",
+  "fitness": 0.5798927252292633,
+  "metrics": {
+    "total_return": 0.5798927252292633,
+    "excess_return": 0.5798927252292633,
+    "sharpe_ratio": 1.6900772444751797,
+    "max_drawdown": -0.0919427187946569,
+    "volatility": 0.14123769049074178,
+    "calmar_ratio": 2.788353350786818,
+    "win_rate": 0.4087301587301587,
+    "final_value": 157989.27252292633,
+    "pnl": 57989.27252292633
+  },
+  "per_stock_pnl": {
+    "ABX.TO": 12098.969419479385,
+    "BBD-B.TO": 24769.604095458977,
+    "RY.TO": 18103.196226119995,
+    "TRP.TO": 3017.502781867981
+  },
+  "total_trades": 20
+}

@@ -1,0 +1,54 @@
+{
+  "config": {
+    "tickers": [
+      "ABX.TO",
+      "BBD-B.TO",
+      "RY.TO",
+      "TRP.TO"
+    ],
+    "backtest_start": "1997-06-25",
+    "backtest_end": "1999-06-25",
+    "initial_capital": 100000.0,
+    "population_size": 10,
+    "generations": 3,
+    "crossover_prob": 0.8,
+    "mutation_prob": 0.2,
+    "tournament_size": 3,
+    "output_dir": "portfolio_experiment_results",
+    "experiment_name": "portfolio_exp_20251009_182434"
+  },
+  "evolution_log": [
+    {
+      "generation": 1,
+      "min_fitness": 0.0,
+      "avg_fitness": 0.0193687985572815,
+      "max_fitness": 0.04384129629135132,
+      "std_fitness": 0.01945266885837117,
+      "eval_time": 0.379699,
+      "timestamp": "2025-10-09T18:24:35.393833"
+    },
+    {
+      "generation": 2,
+      "min_fitness": 0.03746167232036591,
+      "avg_fitness": 0.04065148430585862,
+      "max_fitness": 0.04384129629135132,
+      "std_fitness": 0.0031898119854927055,
+      "eval_time": 0.31925,
+      "timestamp": "2025-10-09T18:24:35.716632"
+    },
+    {
+      "generation": 3,
+      "min_fitness": -0.03818925053119674,
+      "avg_fitness": 0.03372435441780089,
+      "max_fitness": 0.04384129629135132,
+      "std_fitness": 0.024140389991281794,
+      "eval_time": 0.188147,
+      "timestamp": "2025-10-09T18:24:35.908768"
+    }
+  ],
+  "total_time": 0.89823,
+  "final_statistics": {
+    "best_fitness": 0.04384129629135132,
+    "best_pnl": 4384.129629135132
+  }
+}

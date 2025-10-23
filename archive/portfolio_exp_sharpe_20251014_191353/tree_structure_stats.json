@@ -1,0 +1,707 @@
+{
+  "experiment": "portfolio_exp_sharpe_20251014_191353",
+  "experiment_path": "portfolio_experiment_results/portfolio_exp_sharpe_20251014_191353",
+  "total_generations": 50,
+  "statistics": [
+    {
+      "generation": 1,
+      "population_size": 5000,
+      "depth": {
+        "mean": 1.949,
+        "min": 1,
+        "max": 3
+      },
+      "nodes": {
+        "mean": 6.4518,
+        "min": 2,
+        "max": 15
+      }
+    },
+    {
+      "generation": 2,
+      "population_size": 5000,
+      "depth": {
+        "mean": 2.4234,
+        "min": 1,
+        "max": 7
+      },
+      "nodes": {
+        "mean": 7.6032,
+        "min": 2,
+        "max": 28
+      }
+    },
+    {
+      "generation": 3,
+      "population_size": 5000,
+      "depth": {
+        "mean": 2.856,
+        "min": 1,
+        "max": 9
+      },
+      "nodes": {
+        "mean": 8.969,
+        "min": 2,
+        "max": 33
+      }
+    },
+    {
+      "generation": 4,
+      "population_size": 5000,
+      "depth": {
+        "mean": 3.3202,
+        "min": 1,
+        "max": 10
+      },
+      "nodes": {
+        "mean": 10.5066,
+        "min": 2,
+        "max": 38
+      }
+    },
+    {
+      "generation": 5,
+      "population_size": 5000,
+      "depth": {
+        "mean": 3.6948,
+        "min": 1,
+        "max": 11
+      },
+      "nodes": {
+        "mean": 11.8568,
+        "min": 2,
+        "max": 37
+      }
+    },
+    {
+      "generation": 6,
+      "population_size": 5000,
+      "depth": {
+        "mean": 3.958,
+        "min": 1,
+        "max": 10
+      },
+      "nodes": {
+        "mean": 12.7814,
+        "min": 2,
+        "max": 43
+      }
+    },
+    {
+      "generation": 7,
+      "population_size": 5000,
+      "depth": {
+        "mean": 4.2008,
+        "min": 1,
+        "max": 11
+      },
+      "nodes": {
+        "mean": 13.7702,
+        "min": 2,
+        "max": 54
+      }
+    },
+    {
+      "generation": 8,
+      "population_size": 5000,
+      "depth": {
+        "mean": 4.4004,
+        "min": 1,
+        "max": 11
+      },
+      "nodes": {
+        "mean": 14.4324,
+        "min": 2,
+        "max": 52
+      }
+    },
+    {
+      "generation": 9,
+      "population_size": 5000,
+      "depth": {
+        "mean": 4.638,
+        "min": 1,
+        "max": 12
+      },
+      "nodes": {
+        "mean": 15.4162,
+        "min": 2,
+        "max": 51
+      }
+    },
+    {
+      "generation": 10,
+      "population_size": 5000,
+      "depth": {
+        "mean": 4.9372,
+        "min": 1,
+        "max": 13
+      },
+      "nodes": {
+        "mean": 16.5014,
+        "min": 2,
+        "max": 57
+      }
+    },
+    {
+      "generation": 11,
+      "population_size": 5000,
+      "depth": {
+        "mean": 5.1592,
+        "min": 1,
+        "max": 14
+      },
+      "nodes": {
+        "mean": 17.417,
+        "min": 2,
+        "max": 58
+      }
+    },
+    {
+      "generation": 12,
+      "population_size": 5000,
+      "depth": {
+        "mean": 5.41,
+        "min": 1,
+        "max": 17
+      },
+      "nodes": {
+        "mean": 18.4672,
+        "min": 2,
+        "max": 65
+      }
+    },
+    {
+      "generation": 13,
+      "population_size": 5000,
+      "depth": {
+        "mean": 5.6756,
+        "min": 1,
+        "max": 18
+      },
+      "nodes": {
+        "mean": 19.5674,
+        "min": 2,
+        "max": 70
+      }
+    },
+    {
+      "generation": 14,
+      "population_size": 5000,
+      "depth": {
+        "mean": 5.9488,
+        "min": 1,
+        "max": 18
+      },
+      "nodes": {
+        "mean": 20.8772,
+        "min": 2,
+        "max": 75
+      }
+    },
+    {
+      "generation": 15,
+      "population_size": 5000,
+      "depth": {
+        "mean": 6.251,
+        "min": 1,
+        "max": 20
+      },
+      "nodes": {
+        "mean": 22.2604,
+        "min": 2,
+        "max": 71
+      }
+    },
+    {
+      "generation": 16,
+      "population_size": 5000,
+      "depth": {
+        "mean": 6.574,
+        "min": 1,
+        "max": 23
+      },
+      "nodes": {
+        "mean": 23.8766,
+        "min": 2,
+        "max": 102
+      }
+    },
+    {
+      "generation": 17,
+      "population_size": 5000,
+      "depth": {
+        "mean": 6.7776,
+        "min": 1,
+        "max": 20
+      },
+      "nodes": {
+        "mean": 24.9652,
+        "min": 2,
+        "max": 84
+      }
+    },
+    {
+      "generation": 18,
+      "population_size": 5000,
+      "depth": {
+        "mean": 7.0032,
+        "min": 1,
+        "max": 20
+      },
+      "nodes": {
+        "mean": 25.9408,
+        "min": 2,
+        "max": 89
+      }
+    },
+    {
+      "generation": 19,
+      "population_size": 5000,
+      "depth": {
+        "mean": 7.2468,
+        "min": 1,
+        "max": 21
+      },
+      "nodes": {
+        "mean": 26.9378,
+        "min": 3,
+        "max": 89
+      }
+    },
+    {
+      "generation": 20,
+      "population_size": 5000,
+      "depth": {
+        "mean": 7.6228,
+        "min": 1,
+        "max": 23
+      },
+      "nodes": {
+        "mean": 28.4788,
+        "min": 2,
+        "max": 96
+      }
+    },
+    {
+      "generation": 21,
+      "population_size": 5000,
+      "depth": {
+        "mean": 8.1168,
+        "min": 1,
+        "max": 23
+      },
+      "nodes": {
+        "mean": 30.2824,
+        "min": 2,
+        "max": 103
+      }
+    },
+    {
+      "generation": 22,
+      "population_size": 5000,
+      "depth": {
+        "mean": 8.584,
+        "min": 1,
+        "max": 23
+      },
+      "nodes": {
+        "mean": 32.0874,
+        "min": 2,
+        "max": 115
+      }
+    },
+    {
+      "generation": 23,
+      "population_size": 5000,
+      "depth": {
+        "mean": 9.1282,
+        "min": 1,
+        "max": 23
+      },
+      "nodes": {
+        "mean": 34.1918,
+        "min": 2,
+        "max": 105
+      }
+    },
+    {
+      "generation": 24,
+      "population_size": 5000,
+      "depth": {
+        "mean": 9.6412,
+        "min": 1,
+        "max": 29
+      },
+      "nodes": {
+        "mean": 36.9188,
+        "min": 2,
+        "max": 135
+      }
+    },
+    {
+      "generation": 25,
+      "population_size": 5000,
+      "depth": {
+        "mean": 10.1558,
+        "min": 1,
+        "max": 39
+      },
+      "nodes": {
+        "mean": 39.7606,
+        "min": 2,
+        "max": 150
+      }
+    },
+    {
+      "generation": 26,
+      "population_size": 5000,
+      "depth": {
+        "mean": 10.5266,
+        "min": 1,
+        "max": 30
+      },
+      "nodes": {
+        "mean": 42.3468,
+        "min": 2,
+        "max": 148
+      }
+    },
+    {
+      "generation": 27,
+      "population_size": 5000,
+      "depth": {
+        "mean": 11.045,
+        "min": 1,
+        "max": 28
+      },
+      "nodes": {
+        "mean": 45.6528,
+        "min": 2,
+        "max": 164
+      }
+    },
+    {
+      "generation": 28,
+      "population_size": 5000,
+      "depth": {
+        "mean": 11.6524,
+        "min": 1,
+        "max": 38
+      },
+      "nodes": {
+        "mean": 48.9936,
+        "min": 2,
+        "max": 188
+      }
+    },
+    {
+      "generation": 29,
+      "population_size": 5000,
+      "depth": {
+        "mean": 12.3864,
+        "min": 1,
+        "max": 41
+      },
+      "nodes": {
+        "mean": 53.043,
+        "min": 2,
+        "max": 200
+      }
+    },
+    {
+      "generation": 30,
+      "population_size": 5000,
+      "depth": {
+        "mean": 13.1144,
+        "min": 1,
+        "max": 41
+      },
+      "nodes": {
+        "mean": 56.9856,
+        "min": 3,
+        "max": 214
+      }
+    },
+    {
+      "generation": 31,
+      "population_size": 5000,
+      "depth": {
+        "mean": 13.876,
+        "min": 1,
+        "max": 44
+      },
+      "nodes": {
+        "mean": 61.481,
+        "min": 2,
+        "max": 229
+      }
+    },
+    {
+      "generation": 32,
+      "population_size": 5000,
+      "depth": {
+        "mean": 14.585,
+        "min": 1,
+        "max": 46
+      },
+      "nodes": {
+        "mean": 66.6546,
+        "min": 2,
+        "max": 231
+      }
+    },
+    {
+      "generation": 33,
+      "population_size": 5000,
+      "depth": {
+        "mean": 15.0522,
+        "min": 1,
+        "max": 46
+      },
+      "nodes": {
+        "mean": 72.1276,
+        "min": 3,
+        "max": 304
+      }
+    },
+    {
+      "generation": 34,
+      "population_size": 5000,
+      "depth": {
+        "mean": 15.4996,
+        "min": 1,
+        "max": 43
+      },
+      "nodes": {
+        "mean": 80.3684,
+        "min": 2,
+        "max": 262
+      }
+    },
+    {
+      "generation": 35,
+      "population_size": 5000,
+      "depth": {
+        "mean": 15.4912,
+        "min": 1,
+        "max": 51
+      },
+      "nodes": {
+        "mean": 87.1212,
+        "min": 2,
+        "max": 256
+      }
+    },
+    {
+      "generation": 36,
+      "population_size": 5000,
+      "depth": {
+        "mean": 15.8416,
+        "min": 1,
+        "max": 51
+      },
+      "nodes": {
+        "mean": 95.763,
+        "min": 2,
+        "max": 309
+      }
+    },
+    {
+      "generation": 37,
+      "population_size": 5000,
+      "depth": {
+        "mean": 16.037,
+        "min": 1,
+        "max": 51
+      },
+      "nodes": {
+        "mean": 102.3734,
+        "min": 2,
+        "max": 324
+      }
+    },
+    {
+      "generation": 38,
+      "population_size": 5000,
+      "depth": {
+        "mean": 16.6538,
+        "min": 1,
+        "max": 51
+      },
+      "nodes": {
+        "mean": 109.207,
+        "min": 2,
+        "max": 315
+      }
+    },
+    {
+      "generation": 39,
+      "population_size": 5000,
+      "depth": {
+        "mean": 17.2232,
+        "min": 1,
+        "max": 51
+      },
+      "nodes": {
+        "mean": 115.9932,
+        "min": 2,
+        "max": 403
+      }
+    },
+    {
+      "generation": 40,
+      "population_size": 5000,
+      "depth": {
+        "mean": 18.2464,
+        "min": 1,
+        "max": 51
+      },
+      "nodes": {
+        "mean": 124.1346,
+        "min": 3,
+        "max": 403
+      }
+    },
+    {
+      "generation": 41,
+      "population_size": 5000,
+      "depth": {
+        "mean": 19.4548,
+        "min": 1,
+        "max": 60
+      },
+      "nodes": {
+        "mean": 132.0912,
+        "min": 2,
+        "max": 438
+      }
+    },
+    {
+      "generation": 42,
+      "population_size": 5000,
+      "depth": {
+        "mean": 20.875,
+        "min": 1,
+        "max": 65
+      },
+      "nodes": {
+        "mean": 142.5666,
+        "min": 3,
+        "max": 395
+      }
+    },
+    {
+      "generation": 43,
+      "population_size": 5000,
+      "depth": {
+        "mean": 22.7244,
+        "min": 1,
+        "max": 56
+      },
+      "nodes": {
+        "mean": 156.3026,
+        "min": 2,
+        "max": 512
+      }
+    },
+    {
+      "generation": 44,
+      "population_size": 5000,
+      "depth": {
+        "mean": 23.5556,
+        "min": 1,
+        "max": 82
+      },
+      "nodes": {
+        "mean": 164.185,
+        "min": 3,
+        "max": 526
+      }
+    },
+    {
+      "generation": 45,
+      "population_size": 5000,
+      "depth": {
+        "mean": 24.1782,
+        "min": 1,
+        "max": 82
+      },
+      "nodes": {
+        "mean": 170.3688,
+        "min": 2,
+        "max": 559
+      }
+    },
+    {
+      "generation": 46,
+      "population_size": 5000,
+      "depth": {
+        "mean": 24.7274,
+        "min": 1,
+        "max": 59
+      },
+      "nodes": {
+        "mean": 174.3666,
+        "min": 2,
+        "max": 536
+      }
+    },
+    {
+      "generation": 47,
+      "population_size": 5000,
+      "depth": {
+        "mean": 25.55,
+        "min": 1,
+        "max": 68
+      },
+      "nodes": {
+        "mean": 179.5666,
+        "min": 3,
+        "max": 579
+      }
+    },
+    {
+      "generation": 48,
+      "population_size": 5000,
+      "depth": {
+        "mean": 26.2624,
+        "min": 1,
+        "max": 68
+      },
+      "nodes": {
+        "mean": 183.4908,
+        "min": 3,
+        "max": 592
+      }
+    },
+    {
+      "generation": 49,
+      "population_size": 5000,
+      "depth": {
+        "mean": 26.973,
+        "min": 1,
+        "max": 66
+      },
+      "nodes": {
+        "mean": 190.0258,
+        "min": 3,
+        "max": 592
+      }
+    },
+    {
+      "generation": 50,
+      "population_size": 5000,
+      "depth": {
+        "mean": 27.9728,
+        "min": 1,
+        "max": 69
+      },
+      "nodes": {
+        "mean": 201.4452,
+        "min": 2,
+        "max": 589
+      }
+    }
+  ]
+}

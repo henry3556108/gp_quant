@@ -330,7 +330,7 @@ def main():
         'tournament_size': 3,
         
         # Fitness 計算方式
-        'fitness_metric': 'excess_return',  # 'excess_return', 'sharpe_ratio', 'avg_sharpe'
+        'fitness_metric': 'sharpe_ratio',  # 'excess_return', 'sharpe_ratio', 'avg_sharpe'
         'risk_free_rate': 0.0,  # 年化無風險利率
         
         # 早停配置
@@ -339,7 +339,7 @@ def main():
         'early_stopping_min_delta': 0.001,   # 最小改進閾值（根據 fitness_metric 調整）
         
         # Niching 配置
-        'niching_enabled': False,            # 是否啟用 Niching 策略
+        'niching_enabled': True,            # 是否啟用 Niching 策略
         'niching_n_clusters': 3,            # Niche 數量
         'niching_cross_ratio': 0.8,         # 跨群交配比例 (0.8 = 80%)
         'niching_update_frequency': 1,      # 每 N 代重新計算相似度矩陣

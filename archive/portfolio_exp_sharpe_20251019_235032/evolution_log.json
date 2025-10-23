@@ -1,0 +1,330 @@
+{
+  "config": {
+    "tickers": [
+      "ABX.TO",
+      "BBD-B.TO",
+      "RY.TO",
+      "TRP.TO"
+    ],
+    "train_data_start": "1995-01-03",
+    "train_backtest_start": "1997-06-25",
+    "train_backtest_end": "1999-06-25",
+    "test_data_start": "1997-06-25",
+    "test_backtest_start": "1999-06-26",
+    "test_backtest_end": "2001-06-26",
+    "initial_capital": 100000.0,
+    "population_size": 5000,
+    "generations": 50,
+    "crossover_prob": 0.8,
+    "mutation_prob": 0.2,
+    "tournament_size": 3,
+    "fitness_metric": "sharpe_ratio",
+    "risk_free_rate": 0.0,
+    "early_stopping_enabled": true,
+    "early_stopping_patience": 5,
+    "early_stopping_min_delta": 0.001,
+    "niching_enabled": true,
+    "niching_n_clusters": 3,
+    "niching_cross_ratio": 0.8,
+    "niching_update_frequency": 1,
+    "niching_algorithm": "kmeans",
+    "output_dir": "portfolio_experiment_results",
+    "experiment_name": "portfolio_exp_sharpe_20251019_235032"
+  },
+  "evolution_log": [
+    {
+      "generation": 1,
+      "min_fitness": -1.5877009177670292,
+      "avg_fitness": 0.08851256701263682,
+      "max_fitness": 1.6968458441718142,
+      "std_fitness": 0.1918974033870164,
+      "eval_time": 120.251548,
+      "timestamp": "2025-10-19T23:52:33.272082",
+      "niching_selection": {
+        "cross_niche_pairs": 2000,
+        "within_niche_pairs": 500,
+        "cross_niche_ratio": 0.8
+      }
+    },
+    {
+      "generation": 2,
+      "min_fitness": -1.3290200287905243,
+      "avg_fitness": 0.14396479575346538,
+      "max_fitness": 1.6968458441718142,
+      "std_fitness": 0.1801661874446672,
+      "eval_time": 100.762563,
+      "timestamp": "2025-10-19T23:55:10.606783",
+      "niching_selection": {
+        "cross_niche_pairs": 2000,
+        "within_niche_pairs": 500,
+        "cross_niche_ratio": 0.8
+      }
+    },
+    {
+      "generation": 3,
+      "min_fitness": -1.2384075536259227,
+      "avg_fitness": 0.17646742893824074,
+      "max_fitness": 1.6968458441718142,
+      "std_fitness": 0.1993827775617204,
+      "eval_time": 104.530238,
+      "timestamp": "2025-10-19T23:57:42.564418",
+      "niching_selection": {
+        "cross_niche_pairs": 2000,
+        "within_niche_pairs": 500,
+        "cross_niche_ratio": 0.8
+      }
+    },
+    {
+      "generation": 4,
+      "min_fitness": -1.4498585225753249,
+      "avg_fitness": 0.20507361154393217,
+      "max_fitness": 1.6968458441718142,
+      "std_fitness": 0.23161407808743978,
+      "eval_time": 104.604726,
+      "timestamp": "2025-10-20T00:00:21.532356",
+      "niching_selection": {
+        "cross_niche_pairs": 2000,
+        "within_niche_pairs": 500,
+        "cross_niche_ratio": 0.8
+      }
+    },
+    {
+      "generation": 5,
+      "min_fitness": -1.3706150114412383,
+      "avg_fitness": 0.21995204448602754,
+      "max_fitness": 1.6968458441718142,
+      "std_fitness": 0.2560942382526062,
+      "eval_time": 103.033233,
+      "timestamp": "2025-10-20T00:02:59.914196",
+      "niching_selection": {
+        "cross_niche_pairs": 2000,
+        "within_niche_pairs": 500,
+        "cross_niche_ratio": 0.8
+      }
+    },
+    {
+      "generation": 6,
+      "min_fitness": -1.4801924823971881,
+      "avg_fitness": 0.2484355638013707,
+      "max_fitness": 1.6968458441718142,
+      "std_fitness": 0.28295607450312343,
+      "eval_time": 101.626159,
+      "timestamp": "2025-10-20T00:05:37.813353",
+      "early_stopped": true,
+      "early_stop_reason": "No improvement for 5 generations"
+    }
+  ],
+  "total_time": 905.081441,
+  "actual_generations": 6,
+  "final_statistics": {
+    "best_fitness": 1.6968458441718142,
+    "best_pnl": 169684.5844171814
+  },
+  "early_stopping": {
+    "enabled": true,
+    "triggered": true,
+    "status": {
+      "counter": 5,
+      "best_fitness": 1.6968458441718142,
+      "should_stop": true,
+      "generation": 6,
+      "patience": 5,
+      "min_delta": 0.001,
+      "mode": "max"
+    }
+  },
+  "niching": {
+    "enabled": true,
+    "n_clusters": 3,
+    "cross_ratio": 0.8,
+    "update_frequency": 1,
+    "algorithm": "kmeans",
+    "log": [
+      {
+        "generation": 1,
+        "selected_k": 3,
+        "avg_similarity": 0.35183880642795134,
+        "diversity_score": 0.6481611935720486,
+        "silhouette_score": 0.09093192183462635,
+        "niche_sizes": {
+          "0": 395,
+          "1": 3110,
+          "2": 1495
+        },
+        "per_niche_silhouette": {
+          "0": {
+            "mean": 1.0,
+            "std": 0.0,
+            "min": 1.0,
+            "max": 1.0,
+            "size": 395
+          },
+          "1": {
+            "mean": -0.10130867390146678,
+            "std": 0.07871874849654116,
+            "min": -0.2610931100319384,
+            "max": 0.0010373030630373968,
+            "size": 3110
+          },
+          "2": {
+            "mean": 0.25065524080715285,
+            "std": 0.016819095298057606,
+            "min": 0.22556894243641235,
+            "max": 0.2684069611780455,
+            "size": 1495
+          }
+        },
+        "computation_time": 53.546683,
+        "k_selection_mode": "fixed"
+      },
+      {
+        "generation": 2,
+        "selected_k": 3,
+        "avg_similarity": 0.3961781800169561,
+        "diversity_score": 0.6038218199830439,
+        "silhouette_score": 0.2776533096082863,
+        "niche_sizes": {
+          "0": 1350,
+          "1": 2369,
+          "2": 1281
+        },
+        "per_niche_silhouette": {
+          "0": {
+            "mean": 0.2746769898141284,
+            "std": 0.07519414678504432,
+            "min": 0.15492957746478875,
+            "max": 0.34247590808005934,
+            "size": 1350
+          },
+          "1": {
+            "mean": -0.11124836986392647,
+            "std": 0.08061454402075496,
+            "min": -0.2854535892565171,
+            "max": 0.0032718265140199796,
+            "size": 2369
+          },
+          "2": {
+            "mean": 1.0,
+            "std": 0.0,
+            "min": 1.0,
+            "max": 1.0,
+            "size": 1281
+          }
+        },
+        "computation_time": 43.864042,
+        "k_selection_mode": "fixed"
+      },
+      {
+        "generation": 3,
+        "selected_k": 3,
+        "avg_similarity": 0.3804730814416859,
+        "diversity_score": 0.6195269185583141,
+        "silhouette_score": 0.26997070454897926,
+        "niche_sizes": {
+          "0": 1332,
+          "1": 2456,
+          "2": 1212
+        },
+        "per_niche_silhouette": {
+          "0": {
+            "mean": 0.3074332785076587,
+            "std": 0.10617053492927203,
+            "min": 0.1217129977460556,
+            "max": 0.38467317806160783,
+            "size": 1332
+          },
+          "1": {
+            "mean": -0.11060570204694832,
+            "std": 0.08524362153918656,
+            "min": -0.30443030204090693,
+            "max": 0.003948857207521163,
+            "size": 2456
+          },
+          "2": {
+            "mean": 1.0,
+            "std": 0.0,
+            "min": 1.0,
+            "max": 1.0,
+            "size": 1212
+          }
+        },
+        "computation_time": 51.29876,
+        "k_selection_mode": "fixed"
+      },
+      {
+        "generation": 4,
+        "selected_k": 3,
+        "avg_similarity": 0.38290024638405357,
+        "diversity_score": 0.6170997536159464,
+        "silhouette_score": 0.27334795962204445,
+        "niche_sizes": {
+          "0": 2415,
+          "1": 1191,
+          "2": 1394
+        },
+        "per_niche_silhouette": {
+          "0": {
+            "mean": -0.11099997509953208,
+            "std": 0.08559378476074896,
+            "min": -0.30950440521134026,
+            "max": 0.006421469996478602,
+            "size": 2415
+          },
+          "1": {
+            "mean": 1.0,
+            "std": 0.0,
+            "min": 1.0,
+            "max": 1.0,
+            "size": 1191
+          },
+          "2": {
+            "mean": 0.3183678177730217,
+            "std": 0.11123969664057026,
+            "min": 0.10624551328068921,
+            "max": 0.38119167264895903,
+            "size": 1394
+          }
+        },
+        "computation_time": 52.112282,
+        "k_selection_mode": "fixed"
+      },
+      {
+        "generation": 5,
+        "selected_k": 3,
+        "avg_similarity": 0.38448608735888623,
+        "diversity_score": 0.6155139126411138,
+        "silhouette_score": 0.2877733560579235,
+        "niche_sizes": {
+          "0": 2397,
+          "1": 1200,
+          "2": 1403
+        },
+        "per_niche_silhouette": {
+          "0": {
+            "mean": -0.10798233110990385,
+            "std": 0.08611581343027706,
+            "min": -0.31467938079247226,
+            "max": 0.007432139986408217,
+            "size": 2397
+          },
+          "1": {
+            "mean": 1.0,
+            "std": 0.0,
+            "min": 1.0,
+            "max": 1.0,
+            "size": 1200
+          },
+          "2": {
+            "mean": 0.3547401482252724,
+            "std": 0.12031150029527726,
+            "min": 0.059914407988587715,
+            "max": 0.41298145506419404,
+            "size": 1403
+          }
+        },
+        "computation_time": 53.356672,
+        "k_selection_mode": "fixed"
+      }
+    ]
+  }
+}

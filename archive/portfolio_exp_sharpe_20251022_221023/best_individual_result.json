@@ -1,0 +1,40 @@
+{
+  "individual": "lt(ARG0, ROC(ARG0, id_int(id_int(id_int(65)))))",
+  "train_fitness": 1.9793623317760383,
+  "train_metrics": {
+    "total_return": 1.8936459724998473,
+    "excess_return": 1.8936459724998473,
+    "sharpe_ratio": 1.9793623317760383,
+    "max_drawdown": -0.09166098752975084,
+    "volatility": 0.13996375351768217,
+    "calmar_ratio": 3.338167309617746,
+    "win_rate": 0.18662674650698602,
+    "final_value": 289364.59724998474,
+    "pnl": 189364.59724998474
+  },
+  "train_per_stock_pnl": {
+    "ABX.TO": -740.2958869934082,
+    "BBD-B.TO": 190104.89313697815,
+    "RY.TO": 0.0,
+    "TRP.TO": 0.0
+  },
+  "train_total_trades": 42,
+  "test_metrics": {
+    "total_return": -0.009059180583953858,
+    "excess_return": -0.009059180583953858,
+    "sharpe_ratio": -0.6611854284609858,
+    "max_drawdown": -0.014120591985473122,
+    "volatility": 0.00916116310101562,
+    "calmar_ratio": -0.42948657513859995,
+    "win_rate": 0.007978723404255319,
+    "final_value": 99094.08194160461,
+    "pnl": -905.9180583953857
+  },
+  "test_per_stock_pnl": {
+    "ABX.TO": -952.1575603485107,
+    "BBD-B.TO": 46.23950195312864,
+    "RY.TO": 0.0,
+    "TRP.TO": 0.0
+  },
+  "test_total_trades": 8
+}

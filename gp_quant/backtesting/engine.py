@@ -674,8 +674,21 @@ class PortfolioBacktestingEngine:
         
         for ticker in self.tickers:
             engine = self.engines[ticker]
+            # Get signals for the full data
+            full_signals = engine.get_signals(individual)
+            # Slice signals to match backtest_data period using mask
+            if engine.backtest_start or engine.backtest_end:
+                mask = pd.Series(True, index=engine.data.index)
+                if engine.backtest_start:
+                    mask &= (engine.data.index >= engine.backtest_start)
+                if engine.backtest_end:
+                    mask &= (engine.data.index <= engine.backtest_end)
+                backtest_signals = full_signals[mask.values]
+            else:
+                backtest_signals = full_signals
+            
             equity_curve = engine._run_simulation_with_equity_curve(
-                engine.get_signals(individual),
+                backtest_signals,
                 engine.backtest_data
             )
             equity_curves.append(equity_curve)
