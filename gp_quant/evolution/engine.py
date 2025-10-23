@@ -142,7 +142,9 @@ def save_population(population, generation, individual_records_dir, max_retries=
     print(f"ERROR: Failed to save population for generation {generation} after {max_retries} attempts")
 
 def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05, 
-                  individual_records_dir: Optional[str] = None, generation_callback=None):
+                  individual_records_dir: Optional[str] = None, generation_callback=None,
+                  fitness_metric='excess_return', custom_selector=None, tournament_size=3,
+                  hof_size=10):
     """
     Configures and runs the main evolutionary algorithm.
 
@@ -157,9 +159,15 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         individual_records_dir: Optional directory path to save population snapshots.
                                If provided, each generation's population will be saved as a pickle file.
         generation_callback: Optional callback function called after each generation.
-                           Signature: callback(gen, pop, hof, logbook) -> bool
-                           If returns True, evolution stops early.
-                           Can be used for early stopping, logging, or other custom logic.
+                           Signature: callback(gen, pop, hof, logbook, stats_record) -> dict or bool
+                           If returns True or dict with 'stop': True, evolution stops early.
+                           If returns dict, can include 'custom_selector' for next generation.
+                           Can be used for early stopping, logging, niching, or other custom logic.
+        fitness_metric: Fitness metric to use ('excess_return', 'sharpe_ratio', 'avg_sharpe').
+        custom_selector: Optional custom selection function. If provided, will be used instead of default.
+                        Signature: selector(pop, gen) -> offspring
+        tournament_size: Tournament size for selection (if using tournament selection).
+        hof_size: Size of Hall of Fame (default: 10).
 
     Returns:
         A tuple containing the final population, the logbook, and the hall of fame.
@@ -198,8 +206,17 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
     # Operator registration
-    toolbox.register("evaluate", backtester.evaluate)
-    toolbox.register("select", ranked_selection)
+    # Wrap evaluate to support fitness_metric
+    def evaluate_with_metric(individual):
+        return backtester.evaluate(individual, fitness_metric=fitness_metric)
+    
+    toolbox.register("evaluate", evaluate_with_metric)
+    
+    # Use custom selector if provided, otherwise use tournament selection
+    if custom_selector is None:
+        toolbox.register("select", tools.selTournament, tournsize=tournament_size)
+    # Note: custom_selector will be used directly in the evolution loop
+    
     toolbox.register("mate", gp.cxOnePoint)
     toolbox.register("expr_mut", gp.genFull, min_=0, max_=2)
     toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
@@ -210,7 +227,7 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
 
     # --- Run Evolution ---
     pop = toolbox.population(n=population_size)
-    hof = tools.HallOfFame(1)
+    hof = tools.HallOfFame(hof_size)
     
     stats = tools.Statistics(lambda ind: ind.fitness.values)
     stats.register("avg", np.mean)
@@ -239,9 +256,14 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     save_population(pop, 0, individual_records_dir)
 
     # Use trange for a progress bar
+    current_custom_selector = custom_selector  # Track current selector
     for gen in (pbar := trange(1, n_generations + 1, desc="Generation")):
         # Select the next generation individuals
-        offspring = toolbox.select(pop, len(pop))
+        # Use custom selector if provided, otherwise use toolbox.select
+        if current_custom_selector is not None:
+            offspring = current_custom_selector(pop, gen)
+        else:
+            offspring = toolbox.select(pop, len(pop))
         offspring = list(map(toolbox.clone, offspring))
 
         # Apply crossover and mutation
@@ -287,11 +309,22 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         # Save population for this generation
         save_population(pop, gen, individual_records_dir)
         
-        # Call generation callback (e.g., for early stopping)
+        # Call generation callback (e.g., for early stopping, niching, logging)
         if generation_callback is not None:
-            should_stop = generation_callback(gen, pop, hof, logbook)
-            if should_stop:
+            callback_result = generation_callback(gen, pop, hof, logbook, record)
+            
+            # Handle different return types
+            if callback_result is True:
+                # Simple boolean: stop evolution
                 print(f"\n⏹️  Evolution stopped by callback at generation {gen}")
                 break
+            elif isinstance(callback_result, dict):
+                # Dict: can contain 'stop' and/or 'custom_selector'
+                if callback_result.get('stop', False):
+                    print(f"\n⏹️  Evolution stopped by callback at generation {gen}")
+                    break
+                # Update custom selector for next generation if provided
+                if 'custom_selector' in callback_result:
+                    current_custom_selector = callback_result['custom_selector']
     
     return pop, logbook, hof
