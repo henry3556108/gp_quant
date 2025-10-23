@@ -323,7 +323,7 @@ def plot_portfolio_performance(ax, trades_file, title, fixed_tickers=None, start
 
 def main():
     # 設置路徑
-    exp_dir = Path('portfolio_experiment_results/portfolio_exp_sharpe_20251014_191353')
+    exp_dir = Path('portfolio_experiment_results/portfolio_exp_sharpe_20251023_125111')
     
     train_trades = exp_dir / 'best_individual_train_trades.csv'
     test_trades = exp_dir / 'best_individual_test_trades.csv'

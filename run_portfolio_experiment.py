@@ -52,7 +52,6 @@ def main():
         'test_data_start': '1997-06-25',
         'test_backtest_start': '1999-06-26',
         'test_backtest_end': '2001-06-26',
-        
         'initial_capital': 100000.0,
         
         # GP 參數
@@ -74,7 +73,7 @@ def main():
         'early_stopping_min_delta': 0.001,   # 最小改進閾值（根據 fitness_metric 調整）
         
         # Niching 配置
-        'niching_enabled': True,            # 是否啟用 Niching 策略
+        'niching_enabled': False,            # 是否啟用 Niching 策略
         'niching_n_clusters': 3,            # Niche 數量
         'niching_cross_ratio': 0.8,         # 跨群交配比例 (0.8 = 80%)
         'niching_update_frequency': 1,      # 每 N 代重新計算相似度矩陣
