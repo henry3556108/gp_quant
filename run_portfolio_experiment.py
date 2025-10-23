@@ -342,7 +342,7 @@ def main():
         'niching_enabled': True,            # 是否啟用 Niching 策略
         'niching_n_clusters': 3,            # Niche 數量
         'niching_cross_ratio': 0.8,         # 跨群交配比例 (0.8 = 80%)
-        'niching_update_frequency': 1,      # 每 N 代重新計算相似度矩陣
+        'niching_update_frequency': 5,      # 每 N 代重新計算相似度矩陣（建議 5-10）
         'niching_algorithm': 'kmeans',      # 聚類演算法 ('kmeans' 或 'hierarchical')
         
         # 輸出目錄
