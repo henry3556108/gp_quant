@@ -330,7 +330,7 @@ def main():
         'tournament_size': 3,
         
         # Fitness 計算方式
-        'fitness_metric': 'sharpe_ratio',  # 'excess_return', 'sharpe_ratio', 'avg_sharpe'
+        'fitness_metric': 'excess_return',  # 'excess_return', 'sharpe_ratio', 'avg_sharpe'
         'risk_free_rate': 0.0,  # 年化無風險利率
         
         # 早停配置
@@ -552,6 +552,16 @@ def main():
     print("="*100)
     
     start_time = datetime.now()
+    
+    # 準備訓練數據（engine.py 需要的格式）
+    train_data = {
+        ticker: {
+            'data': df,
+            'backtest_start': CONFIG['train_backtest_start'],
+            'backtest_end': CONFIG['train_backtest_end']
+        }
+        for ticker, df in data.items()
+    }
     
     # 調用 run_evolution（來自 engine.py）
     population, logbook, hof = run_evolution(
