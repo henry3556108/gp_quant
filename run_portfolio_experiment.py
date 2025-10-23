@@ -466,7 +466,11 @@ def main():
     # 設置 DEAP
     # ============================================================================
     
-    print("3️⃣  設置 DEAP...")
+    # ============================================================================
+    # 設置 DEAP 並運行演化
+    # ============================================================================
+    
+    print("3️⃣  設置 DEAP 並開始演化...")
     
     # 創建 Fitness 和 Individual 類型
     if not hasattr(creator, "FitnessMax"):
@@ -474,68 +478,16 @@ def main():
     if not hasattr(creator, "Individual"):
         creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMax)
     
-    # 創建 toolbox
-    toolbox = base.Toolbox()
-    
-    # 註冊 GP 操作
-    toolbox.register("expr", gp.genHalfAndHalf, pset=pset, min_=1, max_=3)
-    toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.expr)
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-    toolbox.register("compile", gp.compile, pset=pset)
-    
-    # 註冊演化操作
-    toolbox.register("select", tools.selTournament, tournsize=CONFIG['tournament_size'])
-    toolbox.register("mate", gp.cxOnePoint)
-    toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr, pset=pset)
-    
-    # 定義 fitness 評估函數（使用訓練期數據）
-    def evaluate_individual(individual):
-        """評估單個個體的 fitness（訓練期）"""
-        try:
-            fitness = train_engine.get_fitness(individual, fitness_metric=CONFIG['fitness_metric'])
-            return (fitness,)
-        except Exception as e:
-            return (-1000000.0,)
-    
-    toolbox.register("evaluate", evaluate_individual)
-    
-    print("   ✓ DEAP 設置完成")
+    print("   ✓ DEAP 類型創建完成")
     print()
     
     # ============================================================================
-    # 創建統計和 Hall of Fame
+    # 初始化 Niching 和早停機制
     # ============================================================================
-    
-    stats = tools.Statistics(lambda ind: ind.fitness.values)
-    stats.register("avg", np.mean)
-    stats.register("std", np.std)
-    stats.register("min", np.min)
-    stats.register("max", np.max)
-    
-    hof = tools.HallOfFame(10)  # 保存前 10 個最佳個體
-    
-    # ============================================================================
-    # 創建初始族群
-    # ============================================================================
-    
-    print("4️⃣  創建初始族群...")
-    population = toolbox.population(n=CONFIG['population_size'])
-    print(f"   ✓ 創建 {len(population)} 個個體")
-    print()
-    
-    # ============================================================================
-    # 開始演化
-    # ============================================================================
-    
-    print("5️⃣  開始 GP 演化...")
-    print(f"   族群大小: {CONFIG['population_size']}")
-    print(f"   演化世代: {CONFIG['generations']}")
-    print()
-    print("="*100)
     
     # 記錄演化歷史
     evolution_log = []
-    start_time = datetime.now()
+    niching_log = []
     
     # 初始化早停機制
     early_stopping = None
@@ -551,8 +503,6 @@ def main():
     # 初始化 Niching 機制
     niching_selector = None
     k_selector = None
-    niche_labels = None
-    niching_log = []
     
     if CONFIG['niching_enabled']:
         niching_selector = CrossNicheSelector(
@@ -576,306 +526,49 @@ def main():
         print(f"  - 更新頻率: 每 {CONFIG['niching_update_frequency']} 代")
         print()
     
-    for gen in range(CONFIG['generations']):
-        gen_start_time = datetime.now()
-        
-        print(f"\n{'='*100}")
-        print(f"📊 Generation {gen + 1}/{CONFIG['generations']}")
-        print(f"{'='*100}")
-        
-        # 評估族群
-        print(f"⏳ 評估 {len(population)} 個個體...")
-        eval_start = datetime.now()
-        
-        # 評估所有個體
-        invalid_ind = [ind for ind in population if not ind.fitness.valid]
-        fitnesses = map(toolbox.evaluate, invalid_ind)
-        for ind, fit in zip(invalid_ind, fitnesses):
-            ind.fitness.values = fit
-        
-        eval_time = (datetime.now() - eval_start).total_seconds()
-        print(f"✓ 評估完成 ({eval_time:.1f}s)")
-        
-        # 更新統計
-        hof.update(population)
-        record = stats.compile(population)
-        
-        # 顯示統計
-        min_fit = record['min']
-        avg_fit = record['avg']
-        max_fit = record['max']
-        std_fit = record['std']
-        
-        print(f"\n📈 Fitness 統計:")
-        print(f"   Min: {min_fit:.4f} ({min_fit*100:+.2f}%) | PnL: ${min_fit*CONFIG['initial_capital']:+,.0f}")
-        print(f"   Avg: {avg_fit:.4f} ({avg_fit*100:+.2f}%) | PnL: ${avg_fit*CONFIG['initial_capital']:+,.0f}")
-        print(f"   Max: {max_fit:.4f} ({max_fit*100:+.2f}%) | PnL: ${max_fit*CONFIG['initial_capital']:+,.0f}")
-        print(f"   Std: {std_fit:.4f}")
-        
-        # 記錄到日誌
-        gen_log = {
-            'generation': gen + 1,
-            'min_fitness': float(min_fit),
-            'avg_fitness': float(avg_fit),
-            'max_fitness': float(max_fit),
-            'std_fitness': float(std_fit),
-            'eval_time': eval_time,
-            'timestamp': datetime.now().isoformat()
-        }
-        evolution_log.append(gen_log)
-        
-        # ========================================================================
-        # 早停檢查
-        # ========================================================================
-        
-        if early_stopping is not None:
-            current_best = hof[0].fitness.values[0]
-            
-            if early_stopping.step(current_best):
-                print(f"\n⏹️  早停觸發！")
-                print(f"   連續 {early_stopping.counter} 代無顯著進步")
-                print(f"   最佳 fitness: {early_stopping.best_fitness:.4f}")
-                print(f"   最終 generation: {gen + 1}/{CONFIG['generations']}")
-                print(f"   早停狀態: {early_stopping.get_status()}")
-                
-                # 記錄早停資訊
-                gen_log['early_stopped'] = True
-                gen_log['early_stop_reason'] = f'No improvement for {early_stopping.counter} generations'
-                
-                # 儲存最後一代後跳出循環
-                print(f"\n💾 儲存最終 Generation {gen + 1} 族群...")
-                gen_file = generations_dir / f"generation_{gen+1:03d}_final.pkl"
-                
-                try:
-                    # 準備儲存的資料
-                    final_gen_data = {
-                        'generation': gen + 1,
-                        'population': population,
-                        'hall_of_fame': list(hof),
-                        'statistics': record,
-                        'early_stopped': True,
-                        'early_stopping_status': early_stopping.get_status(),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
-                    # 如果有 niching 資訊，一併儲存
-                    if CONFIG['niching_enabled'] and niche_labels is not None:
-                        final_gen_data['cluster_labels'] = niche_labels.tolist() if hasattr(niche_labels, 'tolist') else list(niche_labels)
-                        final_gen_data['niching_info'] = {
-                            'n_clusters': int(selected_k) if 'selected_k' in locals() else CONFIG['niching_n_clusters'],
-                            'algorithm': CONFIG['niching_algorithm'],
-                            'silhouette_score': float(clusterer.silhouette_score_) if 'clusterer' in locals() and clusterer.silhouette_score_ is not None else None
-                        }
-                    
-                    with open(gen_file, 'wb') as f:
-                        dill.dump(final_gen_data, f)
-                    
-                    file_size = gen_file.stat().st_size / (1024 * 1024)
-                    print(f"   ✓ 已儲存: {gen_file.name} ({file_size:.2f} MB)")
-                except Exception as e:
-                    print(f"   ✗ 儲存失敗: {e}")
-                
-                break  # 跳出演化循環
-            else:
-                # 顯示早停狀態
-                if gen > 0:  # 第一代不顯示
-                    print(f"\n⏸️  早停狀態: {early_stopping.counter}/{early_stopping.patience} 代無進步")
-        
-        # ========================================================================
-        # 儲存當前世代的族群
-        # ========================================================================
-        
-        print(f"\n💾 儲存 Generation {gen + 1} 族群...")
-        gen_file = generations_dir / f"generation_{gen+1:03d}.pkl"
-        
-        try:
-            # 準備儲存的資料
-            gen_data = {
-                'generation': gen + 1,
-                'population': population,
-                'hall_of_fame': list(hof),
-                'statistics': record,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            # 如果有 niching 資訊，一併儲存
-            if CONFIG['niching_enabled'] and niche_labels is not None:
-                gen_data['cluster_labels'] = niche_labels.tolist() if hasattr(niche_labels, 'tolist') else list(niche_labels)
-                gen_data['niching_info'] = {
-                    'n_clusters': int(selected_k) if 'selected_k' in locals() else CONFIG['niching_n_clusters'],
-                    'algorithm': CONFIG['niching_algorithm'],
-                    'silhouette_score': float(clusterer.silhouette_score_) if 'clusterer' in locals() and clusterer.silhouette_score_ is not None else None
-                }
-            
-            # 儲存整個族群
-            with open(gen_file, 'wb') as f:
-                dill.dump(gen_data, f)
-            
-            file_size = gen_file.stat().st_size / (1024 * 1024)  # MB
-            print(f"   ✓ 已儲存: {gen_file.name} ({file_size:.2f} MB)")
-            
-        except Exception as e:
-            print(f"   ✗ 儲存失敗: {e}")
-        
-        # 顯示最佳個體
-        best_ind = hof[0]
-        print(f"\n🏆 當前最佳個體:")
-        print(f"   Fitness: {best_ind.fitness.values[0]:.4f} ({best_ind.fitness.values[0]*100:+.2f}%)")
-        print(f"   PnL: ${best_ind.fitness.values[0]*CONFIG['initial_capital']:+,.0f}")
-        print(f"   深度: {best_ind.height}, 節點數: {len(best_ind)}")
-        print(f"   規則: {str(best_ind)[:100]}{'...' if len(str(best_ind)) > 100 else ''}")
-        
-        # ========================================================================
-        # 選擇和繁殖（如果不是最後一代）
-        # ========================================================================
-        
-        if gen < CONFIG['generations'] - 1:
-            print(f"\n🔄 選擇和繁殖...")
-            
-            # ====================================================================
-            # Niching: 計算相似度矩陣並聚類（每 N 代更新一次）
-            # ====================================================================
-            if CONFIG['niching_enabled'] and gen % CONFIG['niching_update_frequency'] == 0:
-                print(f"\n🔬 Niching: 計算相似度矩陣...")
-                sim_start = datetime.now()
-                
-                try:
-                    # 根據族群大小選擇計算方式
-                    if len(population) >= 200:
-                        # 大族群使用並行計算
-                        sim_matrix = ParallelSimilarityMatrix(population, n_workers=8)
-                        similarity_matrix = sim_matrix.compute(show_progress=False)
-                    else:
-                        # 小族群使用序列計算
-                        sim_matrix = SimilarityMatrix(population)
-                        similarity_matrix = sim_matrix.compute(show_progress=False)
-                    
-                    sim_time = (datetime.now() - sim_start).total_seconds()
-                    
-                    print(f"   ✓ 相似度矩陣計算完成 ({sim_time:.1f}s)")
-                    print(f"   平均相似度: {sim_matrix.get_average_similarity():.4f}")
-                    print(f"   多樣性分數: {sim_matrix.get_diversity_score():.4f}")
-                    
-                    # 動態選擇 k 值
-                    if k_selector is not None:
-                        print(f"\n🎯 選擇 K 值...")
-                        k_result = k_selector.select_k(
-                            similarity_matrix,
-                            population_size=len(population),
-                            generation=gen + 1
-                        )
-                        selected_k = k_result['k']
-                        print(f"   ✓ 選擇的 K: {selected_k}")
-                        if k_result.get('scores'):
-                            best_score = k_result['scores'][selected_k]
-                            print(f"   Silhouette Score: {best_score:.4f}")
-                    else:
-                        selected_k = CONFIG['niching_n_clusters']
-                    
-                    # 聚類
-                    print(f"\n🔬 Niching: 聚類（k={selected_k}）...")
-                    clusterer = NichingClusterer(
-                        n_clusters=selected_k,
-                        algorithm=CONFIG['niching_algorithm']
-                    )
-                    niche_labels = clusterer.fit_predict(similarity_matrix)
-                    
-                    print(f"   ✓ 聚類完成")
-                    print(f"   Silhouette 分數: {clusterer.silhouette_score_:.4f}")
-                    
-                    # 統計各 niche 大小
-                    unique_niches, counts = np.unique(niche_labels, return_counts=True)
-                    print(f"   各 Niche 大小: {dict(zip(unique_niches, counts))}")
-                    
-                    # 顯示每個 niche 的 silhouette score
-                    if clusterer.per_cluster_silhouette_:
-                        print(f"\n   各 Niche Silhouette Score:")
-                        for niche_id, niche_stats in clusterer.per_cluster_silhouette_.items():
-                            print(f"     Niche {niche_id}: {niche_stats['mean']:.4f} (size={niche_stats['size']}, std={niche_stats['std']:.4f})")
-                    
-                    # 記錄 niching 統計
-                    niching_stats = {
-                        'generation': gen + 1,
-                        'selected_k': int(selected_k),
-                        'avg_similarity': float(sim_matrix.get_average_similarity()),
-                        'diversity_score': float(sim_matrix.get_diversity_score()),
-                        'silhouette_score': float(clusterer.silhouette_score_),
-                        'niche_sizes': {int(k): int(v) for k, v in zip(unique_niches, counts)},
-                        'per_niche_silhouette': clusterer.per_cluster_silhouette_,  # 新增：每個 niche 的詳細信息
-                        'computation_time': sim_time
-                    }
-                    if k_selector is not None and k_result.get('mode'):
-                        niching_stats['k_selection_mode'] = k_result['mode']
-                    niching_log.append(niching_stats)
-                    
-                except Exception as e:
-                    print(f"   ✗ Niching 計算失敗: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # 失敗時使用傳統選擇
-                    niche_labels = None
-            
-            # ====================================================================
-            # Selection: 使用 Niching 或傳統選擇
-            # ====================================================================
-            if CONFIG['niching_enabled'] and niche_labels is not None:
-                # 使用跨群選擇
-                print(f"\n🎯 使用跨群選擇...")
-                try:
-                    offspring = niching_selector.select(population, niche_labels, len(population))
-                    offspring = list(map(toolbox.clone, offspring))
-                    
-                    # 顯示選擇統計
-                    selection_stats = niching_selector.get_statistics()
-                    print(f"   ✓ 選擇完成")
-                    print(f"   跨群配對: {selection_stats['cross_niche_pairs']} ({selection_stats['cross_niche_ratio_actual']:.0%})")
-                    print(f"   群內配對: {selection_stats['within_niche_pairs']} ({selection_stats['within_niche_ratio_actual']:.0%})")
-                    
-                    # 記錄選擇統計
-                    gen_log['niching_selection'] = {
-                        'cross_niche_pairs': selection_stats['cross_niche_pairs'],
-                        'within_niche_pairs': selection_stats['within_niche_pairs'],
-                        'cross_niche_ratio': selection_stats['cross_niche_ratio_actual']
-                    }
-                    
-                except Exception as e:
-                    print(f"   ✗ 跨群選擇失敗: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # 失敗時使用傳統選擇
-                    offspring = toolbox.select(population, len(population))
-                    offspring = list(map(toolbox.clone, offspring))
-            else:
-                # 使用傳統 tournament selection
-                offspring = toolbox.select(population, len(population))
-                offspring = list(map(toolbox.clone, offspring))
-            
-            # Crossover
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                if random.random() < CONFIG['crossover_prob']:
-                    toolbox.mate(child1, child2)
-                    del child1.fitness.values
-                    del child2.fitness.values
-            
-            # Mutation
-            for mutant in offspring:
-                if random.random() < CONFIG['mutation_prob']:
-                    toolbox.mutate(mutant)
-                    del mutant.fitness.values
-            
-            population[:] = offspring
-            print(f"   ✓ 新一代族群已準備")
-        
-        # 顯示世代耗時
-        gen_time = (datetime.now() - gen_start_time).total_seconds()
-        print(f"\n⏱️  Generation {gen + 1} 耗時: {gen_time:.1f}s")
+    # ============================================================================
+    # 創建 generation callback
+    # ============================================================================
+    
+    generation_callback = create_generation_callback(
+        CONFIG=CONFIG,
+        early_stopping=early_stopping,
+        niching_selector=niching_selector,
+        k_selector=k_selector,
+        generations_dir=generations_dir,
+        evolution_log=evolution_log,
+        niching_log=niching_log
+    )
     
     # ============================================================================
-    # 演化完成
+    # 運行演化（使用 engine.py）
     # ============================================================================
+    
+    print("4️⃣  開始 GP 演化...")
+    print(f"   族群大小: {CONFIG['population_size']}")
+    print(f"   演化世代: {CONFIG['generations']}")
+    print(f"   Fitness 指標: {CONFIG['fitness_metric']}")
+    print()
+    print("="*100)
+    
+    start_time = datetime.now()
+    
+    # 調用 run_evolution（來自 engine.py）
+    population, logbook, hof = run_evolution(
+        data=train_data,
+        population_size=CONFIG['population_size'],
+        n_generations=CONFIG['generations'],
+        crossover_prob=CONFIG['crossover_prob'],
+        mutation_prob=CONFIG['mutation_prob'],
+        individual_records_dir=None,  # 我們在 callback 中自己處理儲存
+        generation_callback=generation_callback,
+        fitness_metric=CONFIG['fitness_metric'],
+        tournament_size=CONFIG['tournament_size'],
+        hof_size=10
+    )
     
     total_time = (datetime.now() - start_time).total_seconds()
-    actual_generations = gen + 1  # 實際運行的代數
+    actual_generations = len(evolution_log)  # 實際運行的代數
     
     print()
     print("="*100)
