@@ -135,15 +135,11 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
                 sim_start = datetime.now()
                 
                 try:
-                    # 計算相似度矩陣（使用採樣策略加速）
-                    if len(pop) >= 1000:
-                        # 大族群：使用採樣策略（5000 個體採樣 500 個）
-                        sample_size = max(500, int(len(pop) * 0.1))  # 至少 500 或 10%
-                        sim_matrix = SampledSimilarityMatrix(pop, sample_size=sample_size, n_workers=8)
-                        similarity_matrix = sim_matrix.compute(show_progress=False)
-                    elif len(pop) >= 200:
-                        # 中等族群：使用並行完整計算
-                        sim_matrix = ParallelSimilarityMatrix(pop, n_workers=8)
+                    # 計算相似度矩陣（完整計算，6 個 workers）
+                    # 目標：6 分鐘內完成 5000×5000 矩陣計算
+                    if len(pop) >= 200:
+                        # 使用並行完整計算（6 個 workers）
+                        sim_matrix = ParallelSimilarityMatrix(pop, n_workers=6)
                         similarity_matrix = sim_matrix.compute(show_progress=False)
                     else:
                         # 小族群：使用單線程
