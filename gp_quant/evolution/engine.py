@@ -142,7 +142,11 @@ def save_population(population, generation, individual_records_dir, max_retries=
     print(f"ERROR: Failed to save population for generation {generation} after {max_retries} attempts")
 
 def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05, 
-                  individual_records_dir: Optional[str] = None):
+                  individual_records_dir: Optional[str] = None,
+                  generation_callback=None,
+                  fitness_metric='excess_return',
+                  tournament_size=3,
+                  hof_size=1):
     """
     Configures and runs the main evolutionary algorithm.
 
@@ -156,6 +160,11 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         mutation_prob: The probability of mutation.
         individual_records_dir: Optional directory path to save population snapshots.
                                If provided, each generation's population will be saved as a pickle file.
+        generation_callback: Optional callback function called after each generation.
+                           Signature: callback(gen, pop, hof, logbook, toolbox) -> Optional[custom_selector]
+        fitness_metric: Fitness metric to use ('excess_return' or 'sharpe_ratio')
+        tournament_size: Tournament size for selection
+        hof_size: Size of hall of fame
 
     Returns:
         A tuple containing the final population, the logbook, and the hall of fame.
@@ -194,8 +203,8 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
     # Operator registration
-    toolbox.register("evaluate", backtester.evaluate)
-    toolbox.register("select", ranked_selection)
+    toolbox.register("evaluate", lambda ind: backtester.evaluate(ind, fitness_metric=fitness_metric))
+    toolbox.register("select", tools.selTournament, tournsize=tournament_size)
     toolbox.register("mate", gp.cxOnePoint)
     toolbox.register("expr_mut", gp.genFull, min_=0, max_=2)
     toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
@@ -206,7 +215,7 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
 
     # --- Run Evolution ---
     pop = toolbox.population(n=population_size)
-    hof = tools.HallOfFame(1)
+    hof = tools.HallOfFame(hof_size)
     
     stats = tools.Statistics(lambda ind: ind.fitness.values)
     stats.register("avg", np.mean)
@@ -236,8 +245,17 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
 
     # Use trange for a progress bar
     for gen in (pbar := trange(1, n_generations + 1, desc="Generation")):
+        # Call generation callback if provided (before selection)
+        custom_selector = None
+        if generation_callback:
+            custom_selector = generation_callback(gen, pop, hof, logbook, toolbox)
+        
         # Select the next generation individuals
-        offspring = toolbox.select(pop, len(pop))
+        # Use custom selector if provided by callback, otherwise use default
+        if custom_selector:
+            offspring = custom_selector(pop, len(pop))
+        else:
+            offspring = toolbox.select(pop, len(pop))
         offspring = list(map(toolbox.clone, offspring))
 
         # Apply crossover and mutation
