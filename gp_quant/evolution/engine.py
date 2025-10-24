@@ -161,7 +161,7 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         individual_records_dir: Optional directory path to save population snapshots.
                                If provided, each generation's population will be saved as a pickle file.
         generation_callback: Optional callback function called after each generation.
-                           Signature: callback(gen, pop, hof, logbook, toolbox) -> Optional[custom_selector]
+                           Signature: callback(gen, pop, hof, logbook, record) -> Optional[custom_selector]
         fitness_metric: Fitness metric to use ('excess_return' or 'sharpe_ratio')
         tournament_size: Tournament size for selection
         hof_size: Size of hall of fame
@@ -245,17 +245,8 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
 
     # Use trange for a progress bar
     for gen in (pbar := trange(1, n_generations + 1, desc="Generation")):
-        # Call generation callback if provided (before selection)
-        custom_selector = None
-        if generation_callback:
-            custom_selector = generation_callback(gen, pop, hof, logbook, toolbox)
-        
         # Select the next generation individuals
-        # Use custom selector if provided by callback, otherwise use default
-        if custom_selector:
-            offspring = custom_selector(pop, len(pop))
-        else:
-            offspring = toolbox.select(pop, len(pop))
+        offspring = toolbox.select(pop, len(pop))
         offspring = list(map(toolbox.clone, offspring))
 
         # Apply crossover and mutation
@@ -296,5 +287,14 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         
         # Save population for this generation
         save_population(pop, gen, individual_records_dir)
+        
+        # Call generation callback if provided (after evaluation and stats)
+        # Callback can return a custom selector for next generation
+        if generation_callback:
+            custom_selector = generation_callback(gen, pop, hof, logbook, record)
+            if custom_selector:
+                # Replace the default selector with custom one
+                toolbox.unregister("select")
+                toolbox.register("select", custom_selector)
     
     return pop, logbook, hof
