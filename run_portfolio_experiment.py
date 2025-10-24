@@ -135,10 +135,20 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
                 sim_start = datetime.now()
                 
                 try:
-                    # 計算相似度矩陣（完整計算，6 個 workers）
-                    # 目標：6 分鐘內完成 5000×5000 矩陣計算
-                    if len(pop) >= 200:
-                        # 使用並行完整計算（6 個 workers）
+                    # 自適應相似度矩陣計算策略
+                    # 策略：根據平均 tree 大小決定使用完整計算或採樣
+                    avg_tree_size = np.mean([ind.height for ind in pop])
+                    
+                    # 如果 tree 太大（深度 > 8），使用採樣以保證 6 分鐘內完成
+                    if avg_tree_size > 8 or len(pop) >= 1000:
+                        # 大 tree 或大族群：使用採樣策略
+                        sample_size = max(500, int(len(pop) * 0.15))  # 15% 或至少 500
+                        print(f"   策略：採樣計算（avg depth={avg_tree_size:.1f}, sample={sample_size}）")
+                        sim_matrix = SampledSimilarityMatrix(pop, sample_size=sample_size, n_workers=6)
+                        similarity_matrix = sim_matrix.compute(show_progress=False)
+                    elif len(pop) >= 200:
+                        # 中等 tree 和族群：使用完整並行計算
+                        print(f"   策略：完整計算（avg depth={avg_tree_size:.1f}）")
                         sim_matrix = ParallelSimilarityMatrix(pop, n_workers=6)
                         similarity_matrix = sim_matrix.compute(show_progress=False)
                     else:
