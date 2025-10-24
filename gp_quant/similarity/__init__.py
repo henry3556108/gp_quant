@@ -37,6 +37,7 @@ from .tree_edit_distance import (
 
 from .similarity_matrix import SimilarityMatrix
 from .parallel_calculator import ParallelSimilarityMatrix
+from .sampled_calculator import SampledSimilarityMatrix
 from .visualizer import (
     plot_diversity_evolution,
     plot_similarity_heatmap,
@@ -56,6 +57,7 @@ __all__ = [
     'compute_similarity',
     'SimilarityMatrix',
     'ParallelSimilarityMatrix',
+    'SampledSimilarityMatrix',
     'plot_diversity_evolution',
     'plot_similarity_heatmap',
     'plot_similarity_distribution',

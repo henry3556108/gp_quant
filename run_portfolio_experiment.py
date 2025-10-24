@@ -27,7 +27,7 @@ from gp_quant.backtesting.portfolio_engine import PortfolioBacktestingEngine
 from gp_quant.gp.operators import pset
 from gp_quant.evolution.early_stopping import EarlyStopping
 from gp_quant.evolution.engine import run_evolution
-from gp_quant.similarity import SimilarityMatrix, ParallelSimilarityMatrix
+from gp_quant.similarity import SimilarityMatrix, ParallelSimilarityMatrix, SampledSimilarityMatrix
 from gp_quant.niching import NichingClusterer, CrossNicheSelector, create_k_selector
 
 
@@ -135,11 +135,18 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
                 sim_start = datetime.now()
                 
                 try:
-                    # 計算相似度矩陣
-                    if len(pop) >= 200:
-                        sim_matrix = ParallelSimilarityMatrix(pop, n_workers=6)
+                    # 計算相似度矩陣（使用採樣策略加速）
+                    if len(pop) >= 1000:
+                        # 大族群：使用採樣策略（5000 個體採樣 500 個）
+                        sample_size = max(500, int(len(pop) * 0.1))  # 至少 500 或 10%
+                        sim_matrix = SampledSimilarityMatrix(pop, sample_size=sample_size, n_workers=8)
+                        similarity_matrix = sim_matrix.compute(show_progress=False)
+                    elif len(pop) >= 200:
+                        # 中等族群：使用並行完整計算
+                        sim_matrix = ParallelSimilarityMatrix(pop, n_workers=8)
                         similarity_matrix = sim_matrix.compute(show_progress=False)
                     else:
+                        # 小族群：使用單線程
                         sim_matrix = SimilarityMatrix(pop)
                         similarity_matrix = sim_matrix.compute(show_progress=False)
                     
@@ -157,8 +164,7 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
                         k_result = k_selector.select_k(
                             similarity_matrix,
                             population_size=len(pop),
-                            generation=gen,
-                            fitness_values=[ind.fitness.values[0] for ind in pop]
+                            generation=gen
                         )
                         
                         selected_k = k_result['selected_k']
@@ -342,7 +348,7 @@ def main():
         'niching_enabled': True,            # 是否啟用 Niching 策略
         'niching_n_clusters': 3,            # Niche 數量
         'niching_cross_ratio': 0.8,         # 跨群交配比例 (0.8 = 80%)
-        'niching_update_frequency': 3,      # 每 N 代重新計算相似度矩陣（建議 3-5 以減少計算開銷）
+        'niching_update_frequency': 1,      # 每 N 代重新計算相似度矩陣（建議 3-5 以減少計算開銷）
         'niching_algorithm': 'kmeans',      # 聚類演算法 ('kmeans' 或 'hierarchical')
         
         # 輸出目錄
