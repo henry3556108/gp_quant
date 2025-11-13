@@ -141,7 +141,8 @@ def save_population(population, generation, individual_records_dir, max_retries=
     # If we get here, all retries failed
     print(f"ERROR: Failed to save population for generation {generation} after {max_retries} attempts")
 
-def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.6, mutation_prob=0.05, 
+def run_evolution(data, population_size=500, n_generations=50, 
+                  reproduction_prob=0.35, crossover_prob=0.60, mutation_prob=0.05,
                   individual_records_dir: Optional[str] = None,
                   generation_callback=None,
                   fitness_metric='excess_return',
@@ -149,6 +150,9 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
                   hof_size=1):
     """
     Configures and runs the main evolutionary algorithm.
+    
+    Implements the paper's "pick-one" mechanism where each offspring is created by
+    exactly one of three operations: reproduction, crossover, or mutation.
 
     Args:
         data: The historical stock data. Can be either:
@@ -156,8 +160,9 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
               - A Dict[str, DataFrame] (for portfolio evolution)
         population_size: The number of individuals in the population.
         n_generations: The number of generations to run.
-        crossover_prob: The probability of crossover.
-        mutation_prob: The probability of mutation.
+        reproduction_prob: Probability of reproduction (copying) operation (default: 0.35).
+        crossover_prob: Probability of crossover operation (default: 0.60).
+        mutation_prob: Probability of mutation operation (default: 0.05).
         individual_records_dir: Optional directory path to save population snapshots.
                                If provided, each generation's population will be saved as a pickle file.
         generation_callback: Optional callback function called after each generation.
@@ -169,6 +174,10 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     Returns:
         A tuple containing the final population, the logbook, and the hall of fame.
     """
+    # Validate probabilities sum to 1.0
+    prob_sum = reproduction_prob + crossover_prob + mutation_prob
+    assert abs(prob_sum - 1.0) < 1e-6, \
+        f"Reproduction, crossover, and mutation probabilities must sum to 1.0 (got {prob_sum})"
     # --- Setup DEAP Toolbox ---
     toolbox = base.Toolbox()
     
@@ -204,14 +213,15 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
 
     # Operator registration
     toolbox.register("evaluate", lambda ind: backtester.evaluate(ind, fitness_metric=fitness_metric))
-    toolbox.register("select", tools.selTournament, tournsize=tournament_size)
-    toolbox.register("mate", gp.cxOnePoint)
+    # Use Ranked Selection + SUS as per paper requirements
+    toolbox.register("select", ranked_selection)
+    # Use leaf-biased crossover: 90% internal nodes, 10% terminals (Koza's standard)
+    toolbox.register("mate", gp.cxOnePointLeafBiased, termpb=0.1)
     toolbox.register("expr_mut", gp.genFull, min_=0, max_=2)
     toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
 
-    # Decorators for size limit
-    toolbox.decorate("mate", gp.staticLimit(key=operator.attrgetter("height"), max_value=17))
-    toolbox.decorate("mutate", gp.staticLimit(key=operator.attrgetter("height"), max_value=17))
+    # Note: We don't use staticLimit decorator here because it only rejects operations
+    # Instead, we implement retry logic in the evolution loop to ensure compliant offspring
 
     # --- Run Evolution ---
     pop = toolbox.population(n=population_size)
@@ -243,23 +253,80 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
     # Save initial population (generation 0)
     save_population(pop, 0, individual_records_dir)
 
+    # Statistics for retry failures
+    retry_stats = {
+        'crossover_failures': 0,  # Number of times crossover retry failed
+        'mutation_failures': 0,   # Number of times mutation retry failed
+        'total_crossovers': 0,    # Total crossover operations
+        'total_mutations': 0      # Total mutation operations
+    }
+    
     # Use trange for a progress bar
     for gen in (pbar := trange(1, n_generations + 1, desc="Generation")):
-        # Select the next generation individuals
-        offspring = toolbox.select(pop, len(pop))
-        offspring = list(map(toolbox.clone, offspring))
-
-        # Apply crossover and mutation
-        for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if random.random() < crossover_prob:
-                toolbox.mate(child1, child2)
-                del child1.fitness.values
-                del child2.fitness.values
-
-        for mutant in offspring:
-            if random.random() < mutation_prob:
-                toolbox.mutate(mutant)
-                del mutant.fitness.values
+        # Create offspring using the paper's "pick-one" mechanism
+        # Each offspring is created by exactly ONE of: reproduction, crossover, or mutation
+        offspring = []
+        
+        while len(offspring) < population_size:
+            operation = random.random()
+            
+            if operation < reproduction_prob:
+                # Reproduction: Copy an individual directly
+                parent = toolbox.select(pop, 1)[0]
+                child = toolbox.clone(parent)
+                offspring.append(child)
+                
+            elif operation < reproduction_prob + crossover_prob:
+                # Crossover: Select two parents and create two children
+                # Retry until we get compliant offspring (depth <= 17)
+                retry_stats['total_crossovers'] += 1
+                max_retries = 10
+                for attempt in range(max_retries):
+                    parent1, parent2 = toolbox.select(pop, 2)
+                    child1, child2 = toolbox.clone(parent1), toolbox.clone(parent2)
+                    toolbox.mate(child1, child2)
+                    
+                    # Check if children are compliant
+                    if child1.height <= 17 and child2.height <= 17:
+                        del child1.fitness.values
+                        del child2.fitness.values
+                        offspring.append(child1)
+                        # Only add second child if there's room
+                        if len(offspring) < population_size:
+                            offspring.append(child2)
+                        break
+                else:
+                    # If all retries failed, generate new random individuals
+                    retry_stats['crossover_failures'] += 1
+                    child1 = toolbox.individual()
+                    offspring.append(child1)
+                    if len(offspring) < population_size:
+                        child2 = toolbox.individual()
+                        offspring.append(child2)
+                    
+            else:
+                # Mutation: Select one parent and mutate it
+                # Retry until we get compliant offspring (depth <= 17)
+                retry_stats['total_mutations'] += 1
+                max_retries = 10
+                for attempt in range(max_retries):
+                    parent = toolbox.select(pop, 1)[0]
+                    mutant = toolbox.clone(parent)
+                    toolbox.mutate(mutant)
+                    
+                    # Check if mutant is compliant
+                    if mutant.height <= 17:
+                        del mutant.fitness.values
+                        offspring.append(mutant)
+                        break
+                else:
+                    # If all retries failed, generate a new random individual
+                    retry_stats['mutation_failures'] += 1
+                    mutant = toolbox.individual()
+                    offspring.append(mutant)
+        
+        # Ensure offspring size is exactly population_size (crossover may overshoot by 1)
+        offspring = offspring[:population_size]
 
         # Evaluate the individuals with an invalid fitness
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
@@ -289,12 +356,33 @@ def run_evolution(data, population_size=500, n_generations=50, crossover_prob=0.
         save_population(pop, gen, individual_records_dir)
         
         # Call generation callback if provided (after evaluation and stats)
-        # Callback can return a custom selector for next generation
+        # Callback can return True to stop evolution, or a custom selector for next generation
         if generation_callback:
-            custom_selector = generation_callback(gen, pop, hof, logbook, record)
-            if custom_selector:
+            callback_result = generation_callback(gen, pop, hof, logbook, record)
+            if callback_result is True:
+                # Early stopping triggered - break out of evolution loop
+                print(f"Evolution stopped early at generation {gen}")
+                break
+            elif callback_result and callable(callback_result):
                 # Replace the default selector with custom one
                 toolbox.unregister("select")
-                toolbox.register("select", custom_selector)
+                toolbox.register("select", callback_result)
+    
+    # Save retry statistics if individual_records_dir is provided
+    if individual_records_dir:
+        import json
+        retry_stats_file = os.path.join(individual_records_dir, 'retry_statistics.json')
+        with open(retry_stats_file, 'w') as f:
+            json.dump(retry_stats, f, indent=2)
+        
+        # Also print summary
+        print(f"\n{'='*80}")
+        print("Retry Statistics Summary")
+        print(f"{'='*80}")
+        print(f"Total Crossovers: {retry_stats['total_crossovers']}")
+        print(f"Crossover Failures (10 retries): {retry_stats['crossover_failures']} ({retry_stats['crossover_failures']/max(retry_stats['total_crossovers'],1)*100:.2f}%)")
+        print(f"Total Mutations: {retry_stats['total_mutations']}")
+        print(f"Mutation Failures (10 retries): {retry_stats['mutation_failures']} ({retry_stats['mutation_failures']/max(retry_stats['total_mutations'],1)*100:.2f}%)")
+        print(f"{'='*80}\n")
     
     return pop, logbook, hof

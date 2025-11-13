@@ -263,6 +263,7 @@ tensorboard/
 
 # Weights & Biases
 wandb/
+archive/*
 
 # ============================================================================
 # Keep These Files (明確保留)
@@ -303,3 +304,5 @@ wandb/
 #
 # 4. 定期清理：
 #    git clean -fdx  # 刪除所有未追蹤的文件（小心使用！）
+
+scripts/*

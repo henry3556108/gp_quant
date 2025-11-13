@@ -114,7 +114,7 @@ def run_portfolio_evolution(args, data_dir):
         mode='max'        # Maximize fitness (excess return)
     )
     
-    def early_stop_callback(gen, pop, hof, logbook):
+    def early_stop_callback(gen, pop, hof, logbook, record):
         """Early stopping callback function"""
         current_best = hof[0].fitness.values[0]
         if early_stopping.step(current_best):

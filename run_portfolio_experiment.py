@@ -104,7 +104,8 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
                 _save_generation_with_niching(gen, pop, hof, record, niching_state, 
                                              generations_dir, CONFIG, is_final=True)
                 
-                return {'stop': True}  # 停止演化
+                # 早停：通過異常停止演化，而不是返回值
+                raise StopIteration(f"Early stopping triggered at generation {gen}")
             else:
                 # 顯示早停狀態
                 if gen > 1:
@@ -135,20 +136,10 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
                 sim_start = datetime.now()
                 
                 try:
-                    # 自適應相似度矩陣計算策略
-                    # 策略：根據平均 tree 大小決定使用完整計算或採樣
-                    avg_tree_size = np.mean([ind.height for ind in pop])
-                    
-                    # 如果 tree 太大（深度 > 8），使用採樣以保證 6 分鐘內完成
-                    if avg_tree_size > 8 or len(pop) >= 1000:
-                        # 大 tree 或大族群：使用採樣策略
-                        sample_size = max(500, int(len(pop) * 0.15))  # 15% 或至少 500
-                        print(f"   策略：採樣計算（avg depth={avg_tree_size:.1f}, sample={sample_size}）")
-                        sim_matrix = SampledSimilarityMatrix(pop, sample_size=sample_size, n_workers=6)
-                        similarity_matrix = sim_matrix.compute(show_progress=False)
-                    elif len(pop) >= 200:
-                        # 中等 tree 和族群：使用完整並行計算
-                        print(f"   策略：完整計算（avg depth={avg_tree_size:.1f}）")
+                    # 計算相似度矩陣（完整計算，6 個 workers）
+                    # 目標：6 分鐘內完成 5000×5000 矩陣計算
+                    if len(pop) >= 200:
+                        # 使用並行完整計算（6 個 workers）
                         sim_matrix = ParallelSimilarityMatrix(pop, n_workers=6)
                         similarity_matrix = sim_matrix.compute(show_progress=False)
                     else:
@@ -173,7 +164,7 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
                             generation=gen
                         )
                         
-                        selected_k = k_result['selected_k']
+                        selected_k = k_result['k']  # 修正：使用 'k' 而非 'selected_k'
                         niching_state['selected_k'] = selected_k
                         
                         print(f"   ✓ 選擇 K = {selected_k}")
@@ -260,11 +251,9 @@ def create_generation_callback(CONFIG, early_stopping, niching_selector, k_selec
         gen_time = (datetime.now() - gen_start_time).total_seconds()
         print(f"\n⏱️  Generation {gen} 耗時: {gen_time:.1f}s")
         
-        # 返回結果
-        if custom_selector is not None:
-            return {'custom_selector': custom_selector}
-        else:
-            return None  # 繼續使用默認 selector
+        # 返回 custom_selector（直接返回函數，不是字典）
+        # engine.py 期望直接返回 callable 或 None
+        return custom_selector
     
     def _save_generation_with_niching(gen, pop, hof, record, niching_state, 
                                      generations_dir, CONFIG, is_final=False):
@@ -576,18 +565,23 @@ def main():
     }
     
     # 調用 run_evolution（來自 engine.py）
-    population, logbook, hof = run_evolution(
-        data=train_data,
-        population_size=CONFIG['population_size'],
-        n_generations=CONFIG['generations'],
-        crossover_prob=CONFIG['crossover_prob'],
-        mutation_prob=CONFIG['mutation_prob'],
-        individual_records_dir=None,  # 我們在 callback 中自己處理儲存
-        generation_callback=generation_callback,
-        fitness_metric=CONFIG['fitness_metric'],
-        tournament_size=CONFIG['tournament_size'],
-        hof_size=10
-    )
+    try:
+        population, logbook, hof = run_evolution(
+            data=train_data,
+            population_size=CONFIG['population_size'],
+            n_generations=CONFIG['generations'],
+            crossover_prob=CONFIG['crossover_prob'],
+            mutation_prob=CONFIG['mutation_prob'],
+            individual_records_dir=None,  # 我們在 callback 中自己處理儲存
+            generation_callback=generation_callback,
+            fitness_metric=CONFIG['fitness_metric'],
+            tournament_size=CONFIG['tournament_size'],
+            hof_size=10
+        )
+    except StopIteration as e:
+        # 早停觸發
+        print(f"\n✅ 早停成功: {e}")
+        population, logbook, hof = None, None, None  # 這些值會從 evolution_log 中獲取
     
     total_time = (datetime.now() - start_time).total_seconds()
     actual_generations = len(evolution_log)  # 實際運行的代數
@@ -624,12 +618,22 @@ def main():
         'config': CONFIG,
         'evolution_log': evolution_log,
         'total_time': total_time,
-        'actual_generations': actual_generations,
-        'final_statistics': {
+        'actual_generations': actual_generations
+    }
+    
+    # 添加最終統計（如果有 hof）
+    if hof is not None and len(hof) > 0:
+        log_data['final_statistics'] = {
             'best_fitness': float(hof[0].fitness.values[0]),
             'best_pnl': float(hof[0].fitness.values[0] * CONFIG['initial_capital'])
         }
-    }
+    elif evolution_log:
+        # 從 evolution_log 獲取最佳值
+        best_gen = max(evolution_log, key=lambda x: x['max_fitness'])
+        log_data['final_statistics'] = {
+            'best_fitness': best_gen['max_fitness'],
+            'best_pnl': best_gen['max_fitness'] * CONFIG['initial_capital']
+        }
     
     # 添加早停資訊
     if early_stopping is not None:
@@ -680,18 +684,33 @@ def main():
     print()
     
     print("🏆 Top 10 最佳個體:")
-    for i, ind in enumerate(hof, 1):
-        fitness = ind.fitness.values[0]
-        pnl = fitness * CONFIG['initial_capital']
-        print(f"   {i:2d}. Fitness: {fitness:+.4f} ({fitness*100:+.2f}%) | "
-              f"PnL: ${pnl:+,.0f} | "
-              f"深度: {ind.height} | 節點: {len(ind)}")
+    if hof is not None and len(hof) > 0:
+        for i, ind in enumerate(hof, 1):
+            fitness = ind.fitness.values[0]
+            pnl = fitness * CONFIG['initial_capital']
+            print(f"   {i:2d}. Fitness: {fitness:+.4f} ({fitness*100:+.2f}%) | "
+                  f"PnL: ${pnl:+,.0f} | "
+                  f"深度: {ind.height} | 節點: {len(ind)}")
+    else:
+        print("   (早停觸發，從最終族群文件中查看)")
     
     print()
     
     # 詳細回測最佳個體
     print("🔍 詳細回測最佳個體...")
-    best_individual = hof[0]
+    
+    # 如果早停，從保存的最終族群中加載最佳個體
+    if hof is None or len(hof) == 0:
+        print("   從最終族群文件中加載最佳個體...")
+        final_gen_file = generations_dir / f"generation_{actual_generations:03d}_final.pkl"
+        if not final_gen_file.exists():
+            final_gen_file = generations_dir / f"generation_{actual_generations:03d}.pkl"
+        
+        with open(final_gen_file, 'rb') as f:
+            final_gen_data = dill.load(f)
+            best_individual = final_gen_data['hall_of_fame'][0]
+    else:
+        best_individual = hof[0]
     
     # ========================================================================
     # 訓練期（樣本內）回測
