@@ -1,0 +1,98 @@
+{
+  "experiment": {
+    "name": "test_evolution_parallel",
+    "description": "Test run with parallel operation mode"
+  },
+  
+  "data": {
+    "tickers_dir": "TSE300_selected",
+    "mode": "portfolio",
+    "train_data_start": "1997-06-25",
+    "train_backtest_start": "1998-06-22",
+    "train_backtest_end": "1999-06-25",
+    "test_data_start": "1998-07-07", 
+    "test_backtest_start": "1999-06-28",
+    "test_backtest_end": "2000-06-30"
+  },
+  
+  "evolution": {
+    "generations": 10,
+    "population_size": 100,
+    "initial_depth": 6,
+    "maximum_depth": 17,
+    "max_processors": 6
+  },
+  
+  "operation_mode": "parallel",
+  
+  "initialization": {
+    "strategy": "ramped_half_and_half",
+    "min_depth": 2,
+    "max_depth": 6
+  },
+  
+  "selection": {
+    "method": "ranked_sus",
+    "parameters": {
+      "max_rank_fitness": 1.8,
+      "min_rank_fitness": 0.2
+    }
+  },
+  
+  "crossover": {
+    "strategy": "one_point_leaf_biased", 
+    "rate": 0.50,
+    "parameters": {
+      "terminal_prob": 0.1
+    }
+  },
+  
+  "mutation": {
+    "strategy": "uniform",
+    "rate": 0.15,
+    "parameters": {
+      "min_depth": 0,
+      "max_depth": 2
+    }
+  },
+  
+  "reproduction": {
+    "rate": 0.35
+  },
+  
+  "replacement": {
+    "method": "generational",
+    "parameters": {
+      "elite_size": 10
+    }
+  },
+  
+  "fitness": {
+    "function": "excess_return",
+    "evaluator": "portfolio_backtest",
+    "parameters": {
+      "max_processors": 6,
+      "cache_enabled": true
+    }
+  },
+  
+  "termination": {
+    "method": "generation_limit",
+    "early_stopping": true,
+    "parameters": {
+      "patience": 5,
+      "min_delta": 0.001
+    }
+  },
+  
+  "niching": {
+    "enabled": false
+  },
+  
+  "logging": {
+    "records_dir": "test_evolution_parallel_records",
+    "save_populations": true,
+    "save_genealogy": true,
+    "log_level": "INFO"
+  }
+}
