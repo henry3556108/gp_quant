@@ -1,16 +1,16 @@
 {
-  "experiment_name": "test_evolution",
-  "start_time": "2025-11-23T23:41:24.763710",
-  "end_time": "2025-11-23T23:41:24.826357",
-  "duration_seconds": 0.062647,
+  "experiment_name": "test_evolution_11241221",
+  "start_time": "2025-11-24T00:30:40.796134",
+  "end_time": "2025-11-24T00:30:40.894015",
+  "duration_seconds": 0.097881,
   "final_generation": 10,
-  "best_fitness": 0.9450483693615686,
+  "best_fitness": 0.9770322573004435,
   "population_size": 100,
   "total_individuals_created": 0,
   "config": {
     "experiment": {
-      "name": "test_evolution",
-      "description": "Test run with small parameters"
+      "name": "test_evolution_11241221",
+      "description": "Test run with normal parameters"
     },
     "data": {
       "tickers_dir": "TSE300_selected",
@@ -46,7 +46,7 @@
     },
     "crossover": {
       "strategy": "one_point_leaf_biased",
-      "rate": 0.5,
+      "rate": 0.75,
       "parameters": {
         "terminal_prob": 0.1,
         "max_retries": 10,
@@ -71,7 +71,7 @@
       }
     },
     "reproduction": {
-      "rate": 0.35
+      "rate": 0.2
     },
     "fitness": {
       "function": "excess_return",
@@ -96,6 +96,7 @@
       "records_dir": "test_evolution_records",
       "save_populations": true,
       "save_genealogy": true,
+      "save_format": "json",
       "log_level": "INFO"
     }
   }

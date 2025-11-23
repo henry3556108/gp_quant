@@ -1,1 +1,197 @@
-# TODO: 實作保存處理器
+"""
+保存處理器 - 負責保存演化過程中的數據
+"""
+import json
+import pickle
+from pathlib import Path
+from typing import Dict, Any, List
+from datetime import datetime
+
+from .base import EventHandler
+from ..individual import EvolutionIndividual
+
+
+class SaveHandler(EventHandler):
+    """保存處理器 - 保存演化數據到文件"""
+    
+    def __init__(self, records_dir: str = "evolution_records", save_populations: bool = True, 
+                 save_genealogy: bool = True, save_format: str = "json", **kwargs):
+        """
+        初始化保存處理器
+        
+        Args:
+            records_dir: 記錄保存目錄
+            save_populations: 是否保存每世代族群
+            save_genealogy: 是否保存譜系信息
+            save_format: 保存格式 ("json" 或 "pickle")
+        """
+        super().__init__()
+        self.records_dir = Path(records_dir)
+        self.save_populations = save_populations
+        self.save_genealogy = save_genealogy
+        self.save_format = save_format
+        
+        # 創建保存目錄
+        self.records_dir.mkdir(exist_ok=True)
+        if self.save_populations:
+            (self.records_dir / "populations").mkdir(exist_ok=True)
+        if self.save_genealogy:
+            (self.records_dir / "genealogy").mkdir(exist_ok=True)
+            
+        # 保存統計數據
+        self.generation_stats = []
+        
+    def on_evolution_start(self, engine, **kwargs):
+        """演化開始時的處理"""
+        print(f"💾 保存處理器啟動")
+        print(f"   📁 記錄目錄: {self.records_dir}")
+        print(f"   👥 保存族群: {'✅' if self.save_populations else '❌'}")
+        print(f"   🧬 保存譜系: {'✅' if self.save_genealogy else '❌'}")
+        print(f"   📄 保存格式: {self.save_format}")
+        
+        # 保存初始配置
+        config_file = self.records_dir / "config.json"
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(engine.config, f, indent=2, ensure_ascii=False)
+            
+    def on_generation_complete(self, generation: int, population: List[EvolutionIndividual], 
+                             best_individual: EvolutionIndividual, **kwargs):
+        """每世代完成時的處理"""
+        print(f"💾 保存第 {generation} 世代數據...")
+        
+        # 保存族群數據
+        if self.save_populations:
+            self._save_population(generation, population)
+            
+        # 保存統計數據
+        self._save_generation_stats(generation, population, best_individual)
+        
+        # 保存譜系數據
+        if self.save_genealogy:
+            self._save_genealogy(generation, population)
+            
+    def on_evolution_complete(self, engine, result, **kwargs):
+        """演化完成時的處理"""
+        print(f"💾 保存最終結果...")
+        
+        # 保存完整統計數據
+        stats_file = self.records_dir / "generation_stats.json"
+        with open(stats_file, 'w', encoding='utf-8') as f:
+            json.dump(self.generation_stats, f, indent=2, ensure_ascii=False)
+            
+        # 保存最終結果
+        result_file = self.records_dir / "final_result.json"
+        result_data = {
+            'experiment_name': engine.config.get('experiment', {}).get('name', 'unknown'),
+            'final_generation': result.final_generation,
+            'best_fitness': result.best_fitness,
+            'total_evaluations': result.total_evaluations,
+            'execution_time': result.execution_time,
+            'convergence_generation': result.convergence_generation,
+            'improvement_rate': result.improvement_rate,
+            'fitness_statistics': result.get_fitness_statistics()
+        }
+        
+        with open(result_file, 'w', encoding='utf-8') as f:
+            json.dump(result_data, f, indent=2, ensure_ascii=False)
+            
+        print(f"✅ 數據保存完成!")
+        print(f"   📊 統計數據: {stats_file}")
+        print(f"   🏆 最終結果: {result_file}")
+        
+    def _save_population(self, generation: int, population: List[EvolutionIndividual]):
+        """保存族群數據"""
+        pop_data = []
+        for i, individual in enumerate(population):
+            ind_data = {
+                'index': i,
+                'id': individual.id,
+                'generation': individual.generation,
+                'fitness': individual.fitness.values[0] if hasattr(individual.fitness, 'values') and individual.fitness.values else None,
+                'operation': individual.operation,
+                'parents': individual.parents,
+                'tree_size': len(individual),
+                'tree_depth': individual.height,
+                'tree_str': str(individual),
+                'evaluation_count': individual.evaluation_count
+            }
+            pop_data.append(ind_data)
+            
+        # 保存為 JSON
+        pop_file = self.records_dir / "populations" / f"generation_{generation:03d}.json"
+        with open(pop_file, 'w', encoding='utf-8') as f:
+            json.dump(pop_data, f, indent=2, ensure_ascii=False)
+            
+        # 如果選擇 pickle 格式，也保存原始對象
+        if self.save_format == "pickle":
+            pickle_file = self.records_dir / "populations" / f"generation_{generation:03d}.pkl"
+            with open(pickle_file, 'wb') as f:
+                pickle.dump(population, f)
+                
+    def _save_generation_stats(self, generation: int, population: List[EvolutionIndividual], 
+                             best_individual: EvolutionIndividual):
+        """保存世代統計數據"""
+        # 計算統計數據
+        valid_individuals = [ind for ind in population if hasattr(ind.fitness, 'values') and ind.fitness.values]
+        
+        if valid_individuals:
+            fitness_values = [ind.fitness.values[0] for ind in valid_individuals]
+            stats = {
+                'generation': generation,
+                'timestamp': datetime.now().isoformat(),
+                'population_size': len(population),
+                'valid_individuals': len(valid_individuals),
+                'best_fitness': max(fitness_values),
+                'worst_fitness': min(fitness_values),
+                'avg_fitness': sum(fitness_values) / len(fitness_values),
+                'fitness_std': self._calculate_std(fitness_values),
+                'avg_tree_size': sum(len(ind) for ind in valid_individuals) / len(valid_individuals),
+                'avg_tree_depth': sum(ind.height for ind in valid_individuals) / len(valid_individuals),
+                'best_individual_id': best_individual.id if best_individual else None,
+                'best_tree_size': len(best_individual) if best_individual else None,
+                'best_tree_depth': best_individual.height if best_individual else None
+            }
+        else:
+            stats = {
+                'generation': generation,
+                'timestamp': datetime.now().isoformat(),
+                'population_size': len(population),
+                'valid_individuals': 0,
+                'best_fitness': None,
+                'worst_fitness': None,
+                'avg_fitness': None,
+                'fitness_std': None,
+                'avg_tree_size': None,
+                'avg_tree_depth': None,
+                'best_individual_id': None,
+                'best_tree_size': None,
+                'best_tree_depth': None
+            }
+            
+        self.generation_stats.append(stats)
+        
+    def _save_genealogy(self, generation: int, population: List[EvolutionIndividual]):
+        """保存譜系數據"""
+        genealogy_data = []
+        for individual in population:
+            genealogy_entry = {
+                'id': individual.id,
+                'generation': individual.generation,
+                'operation': individual.operation,
+                'parents': individual.parents,
+                'fitness': individual.fitness.values[0] if hasattr(individual.fitness, 'values') and individual.fitness.values else None,
+                'created_at': datetime.now().isoformat()
+            }
+            genealogy_data.append(genealogy_entry)
+            
+        genealogy_file = self.records_dir / "genealogy" / f"generation_{generation:03d}.json"
+        with open(genealogy_file, 'w', encoding='utf-8') as f:
+            json.dump(genealogy_data, f, indent=2, ensure_ascii=False)
+            
+    def _calculate_std(self, values: List[float]) -> float:
+        """計算標準差"""
+        if len(values) < 2:
+            return 0.0
+        mean = sum(values) / len(values)
+        variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
+        return variance ** 0.5

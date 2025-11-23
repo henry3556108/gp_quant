@@ -203,7 +203,12 @@ def _create_handler(handler_type: str, handler_name: str, handlers_module, confi
             handler_params.update(logging_config.get('parameters', {}))
         elif handler_type == 'save':
             logging_config = config.get('logging', {})
-            handler_params = {'records_dir': logging_config.get('records_dir', 'evolution_records')}
+            handler_params = {
+                'records_dir': logging_config.get('records_dir', 'evolution_records'),
+                'save_populations': logging_config.get('save_populations', True),
+                'save_genealogy': logging_config.get('save_genealogy', True),
+                'save_format': logging_config.get('save_format', 'json')
+            }
             handler_params.update(logging_config.get('parameters', {}))
         
         # 創建處理器實例，傳入配置參數
@@ -304,7 +309,20 @@ def create_evolution_engine(config: dict) -> EvolutionEngine:
     
     # 添加事件處理器 (根據配置動態選擇)
     print(f"   📝 添加事件處理器...")
-    print(f"      └─ 事件處理器: 暫時停用 (待實作)")
+    
+    # 添加保存處理器
+    if config.get('logging', {}).get('save_populations', False) or config.get('logging', {}).get('save_genealogy', False):
+        try:
+            save_handler = _create_handler('save', 'save_handler', handlers, config)
+            engine.add_handler(save_handler)
+            print(f"      ├─ 保存處理器: ✅ 已啟用")
+        except Exception as e:
+            print(f"      ├─ 保存處理器: ❌ 創建失敗 ({e})")
+    else:
+        print(f"      ├─ 保存處理器: ⏸️ 未啟用")
+    
+    # 其他處理器暫時停用
+    print(f"      └─ 其他處理器: 暫時停用 (待實作)")
     
     print(f"✅ 演化引擎創建完成!")
     print(f"   📊 族群大小: {config['evolution']['population_size']}")
