@@ -172,7 +172,8 @@ class EvolutionEngine:
             self._fire_event('generation_complete', 
                            generation=0, 
                            population=self.population,
-                           best_individual=self.best_individual)
+                           best_individual=self.best_individual,
+                           engine=self)
 
             # 5. 演化循環
             for generation in range(1, self.max_generations + 1):
@@ -206,7 +207,8 @@ class EvolutionEngine:
                 self._fire_event('generation_complete',
                                generation=generation,
                                population=self.population,
-                               best_individual=self.best_individual)
+                               best_individual=self.best_individual,
+                               engine=self)
                 
                 logger.info(f"   📊 最佳適應度: {self.best_individual.fitness.values[0]:.6f}")
             

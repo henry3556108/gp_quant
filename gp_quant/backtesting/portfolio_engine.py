@@ -196,11 +196,14 @@ class PortfolioBacktestingEngine:
             
         Returns:
             Dict mapping ticker to {date: signal} dict
+            Signal values: 1 = Long, 0 = Flat, -1 = Short (not used currently)
         """
         from deap import gp
-        from gp_quant.gp.operators import NumVector
+        # 使用正確的 NumVector 類
+        from gp_quant.evolution.components.gp.operators import NumVector
         
         signals = {}
+        common_dates_set = set(self.common_dates)
         
         for ticker in self.tickers:
             df = self.backtest_data[ticker]
@@ -214,54 +217,28 @@ class PortfolioBacktestingEngine:
             volume_vec = volume_vec.view(NumVector)
             
             try:
-                # Set terminal values BEFORE compiling (like BacktestingEngine does)
-                self.pset.terminals[NumVector][0].value = price_vec
-                self.pset.terminals[NumVector][1].value = volume_vec
-                
-                # Compile the individual
+                # Compile the individual (不設置終端值)
                 func = gp.compile(expr=individual, pset=self.pset)
                 
-                # Execute - try without arguments first
-                try:
-                    signal_vector = func()
-                except TypeError as e:
-                    # If it needs arguments, provide them
-                    if "missing" in str(e) and "required positional arguments" in str(e):
-                        signal_vector = func(price_vec, volume_vec)
-                    else:
-                        raise
+                # Execute with arguments
+                signal_vector = func(price_vec, volume_vec)
                 
                 # Handle single boolean return
                 if not isinstance(signal_vector, np.ndarray):
                     signal_vector = np.full(len(price_vec), signal_vector, dtype=bool)
                 
                 # Convert boolean vector to trading signals
+                # 使用持續持有邏輯：True = 持有多頭 (1), False = 空倉 (0)
                 ticker_signals = {}
                 for i, date in enumerate(df.index):
-                    if date in self.common_dates:
-                        # True = Buy, False = Sell/Hold
-                        # We need to detect transitions
-                        if i == 0:
-                            # First day: buy if signal is True
-                            ticker_signals[date] = 1 if signal_vector[i] else 0
-                        else:
-                            prev_signal = signal_vector[i-1]
-                            curr_signal = signal_vector[i]
-                            
-                            if not prev_signal and curr_signal:
-                                # Transition from False to True: Buy
-                                ticker_signals[date] = 1
-                            elif prev_signal and not curr_signal:
-                                # Transition from True to False: Sell
-                                ticker_signals[date] = -1
-                            else:
-                                # No transition: Hold
-                                ticker_signals[date] = 0
+                    if date in common_dates_set:
+                        # True = 持有多頭，False = 空倉
+                        ticker_signals[date] = 1 if signal_vector[i] else 0
                 
                 signals[ticker] = ticker_signals
                 
             except Exception as e:
-                # If evaluation fails, no signals
+                # If evaluation fails, no signals (all flat)
                 ticker_signals = {date: 0 for date in self.common_dates}
                 signals[ticker] = ticker_signals
         

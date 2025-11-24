@@ -23,7 +23,7 @@ def _evaluate_individual_worker(individual_data: tuple, engine_config: Dict[str,
     
     Args:
         individual_data: (individual_id, individual_tree) 元組
-        engine_config: 回測引擎配置
+        engine_config: 回測引擎配置（包含 data_paths 而非 data）
         fitness_config: 適應度配置
         
     Returns:
@@ -32,53 +32,68 @@ def _evaluate_individual_worker(individual_data: tuple, engine_config: Dict[str,
     try:
         individual_id, individual_tree = individual_data
         
+        # 在子進程中讀取數據
+        import pandas as pd
+        from pathlib import Path
+        
+        data = {}
+        tickers_dir = engine_config.get('tickers_dir', 'TSE300_selected')
+        
+        for ticker, csv_path in engine_config['data_paths'].items():
+            # 構建完整路徑
+            if not Path(csv_path).is_absolute():
+                csv_path = Path(tickers_dir) / f"{ticker}.csv"
+            
+            # 讀取數據
+            df = pd.read_csv(csv_path, parse_dates=['Date'])
+            df.set_index('Date', inplace=True)
+            data[ticker] = df
+        
         # 創建回測引擎實例 (每個進程一個)
         engine = PortfolioBacktestingEngine(
-            data=engine_config['data'],
+            data=data,
             backtest_start=engine_config['backtest_start'],
             backtest_end=engine_config['backtest_end'],
             initial_capital=engine_config['initial_capital'],
             pset=engine_config['pset']
         )
         
-        # 評估個體
+        # 評估個體 - 使用 get_fitness 方法
         fitness_metric = fitness_config.get('function', 'excess_return')
-        fitness_value = engine.evaluate(individual_tree, fitness_metric=fitness_metric)[0]
+        fitness_value = engine.get_fitness(individual_tree, fitness_metric=fitness_metric)
         
         return individual_id, fitness_value
         
     except Exception as e:
         logger.error(f"評估個體 {individual_data[0]} 時出錯: {e}")
-        # 返回隨機適應度作為臨時解決方案
-        import random
-        return individual_data[0], random.uniform(-1.0, 1.0)
+        import traceback
+        logger.error(traceback.format_exc())
+        # 返回懲罰值
+        return individual_data[0], -100000.0
 
 class PortfolioFitnessEvaluator(FitnessEvaluator):
     """
     投資組合適應度評估器
     
-    使用 PortfolioBacktestingEngine 進行多股票組合回測，
-    支持並行評估以提高性能。
+    使用 PortfolioBacktestingEngine 進行多股票組合回測。
+    注意：目前使用單進程評估以避免數據序列化問題。
     """
     
-    def __init__(self, max_processors: int = 6, cache_enabled: bool = True):
+    def __init__(self, max_processors: int = 1, cache_enabled: bool = True):
         """
         初始化評估器
         
         Args:
-            max_processors: 最大並行進程數
+            max_processors: 最大並行進程數（目前強制為1以避免序列化問題）
             cache_enabled: 是否啟用適應度緩存
         """
-        super().__init__()
-        self.name = "portfolio_evaluator"
-        self.max_processors = max_processors
+        self.max_processors = 1  # 強制單進程以避免 DataFrame 序列化問題
         self.cache_enabled = cache_enabled
-        self.fitness_cache = {} if cache_enabled else None
+        self.fitness_cache = {}
+        self.engine = None  # Will be set by setup_data
+        self.backtest_engine = None  # 回測引擎實例
         
-        # 回測引擎配置 (將在 set_data 中設置)
-        self.engine_config = None
-        
-        logger.info(f"投資組合評估器初始化: max_processors={max_processors}, cache={cache_enabled}")
+        logger.info(f"Portfolio評估器初始化: 使用單進程評估（避免序列化問題）, cache={cache_enabled}")
     
     def set_data(self, data: Dict[str, Any]):
         """
@@ -147,6 +162,24 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
             logger.error(f"評估個體 {individual.id} 時出錯: {e}")
             return -100000.0  # 懲罰值
     
+    def _get_data_paths(self, data: Dict[str, Any]) -> Dict[str, str]:
+        """
+        從數據配置中提取文件路徑
+        
+        Args:
+            data: 包含 train_data 的數據字典
+            
+        Returns:
+            {ticker: file_path} 的字典
+        """
+        tickers_dir = self.engine.config['data']['tickers_dir']
+        data_paths = {}
+        
+        for ticker in data['train_data'].keys():
+            data_paths[ticker] = f"{ticker}.csv"  # 相對路徑，在 worker 中組合
+        
+        return data_paths
+    
     def evaluate_population(self, population: List, data: Dict[str, Any]):
         """
         評估整個族群的適應度 (並行處理)
@@ -175,12 +208,46 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
             self._evaluate_parallel(individuals_to_evaluate, data)
     
     def _evaluate_sequential(self, individuals: List, data: Dict[str, Any]):
-        """順序評估個體"""
+        """順序評估個體（單進程）"""
+        from ..gp import pset
+        
+        # 創建回測引擎（只創建一次，重複使用）
+        if self.backtest_engine is None:
+            # 處理數據格式
+            processed_data = {}
+            for ticker, ticker_data in data['train_data'].items():
+                if isinstance(ticker_data, dict) and 'data' in ticker_data:
+                    processed_data[ticker] = ticker_data['data']
+                else:
+                    processed_data[ticker] = ticker_data
+            
+            self.backtest_engine = PortfolioBacktestingEngine(
+                data=processed_data,
+                backtest_start=self.engine.config['data']['train_backtest_start'],
+                backtest_end=self.engine.config['data']['train_backtest_end'],
+                initial_capital=100000.0,
+                pset=pset
+            )
+        
+        # 評估每個個體
+        fitness_metric = self.engine.config['fitness']['function']
+        
         for individual in tqdm(individuals, desc="評估個體", unit="個體"):
-            # 暫時使用隨機適應度進行測試
-            import random
-            fitness_value = random.uniform(-1.0, 1.0)
-            individual.fitness.values = (fitness_value,)
+            try:
+                # 使用 get_fitness 方法評估
+                fitness_value = self.backtest_engine.get_fitness(individual, fitness_metric=fitness_metric)
+                individual.fitness.values = (fitness_value,)
+                
+                # 緩存結果
+                if self.cache_enabled:
+                    self.fitness_cache[individual.id] = fitness_value
+                    
+            except Exception as e:
+                logger.error(f"評估個體 {individual.id} 時出錯: {e}")
+                import traceback
+                traceback.print_exc()
+                # 使用懲罰值
+                individual.fitness.values = (-100000.0,)
     
     def _evaluate_parallel(self, individuals: List, data: Dict[str, Any]):
         """並行評估個體"""
@@ -188,8 +255,12 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
             # 準備並行評估的數據
             from ..gp import pset
             
+            # 獲取數據路徑而非數據本身
+            data_paths = self._get_data_paths(data)
+            
             engine_config = {
-                'data': data['train_data'],
+                'data_paths': data_paths,  # 傳遞路徑字符串
+                'tickers_dir': self.engine.config['data']['tickers_dir'],
                 'backtest_start': self.engine.config['data']['train_backtest_start'],
                 'backtest_end': self.engine.config['data']['train_backtest_end'],
                 'initial_capital': 100000.0,

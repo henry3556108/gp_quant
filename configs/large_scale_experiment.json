@@ -1,7 +1,7 @@
 {
   "experiment": {
-    "name": "test_evolution",
-    "description": "Test run with small parameters"
+    "name": "large_scale_evolution_10000x25",
+    "description": "Large scale evolution: 10000 individuals x 25 generations with fixed trading logic"
   },
   
   "data": {
@@ -16,8 +16,8 @@
   },
   
   "evolution": {
-    "generations": 10,
-    "population_size": 100,
+    "generations": 25,
+    "population_size": 10000,
     "initial_depth": 6,
     "maximum_depth": 17,
     "max_processors": 6
@@ -28,10 +28,8 @@
   
   "initialization": {
     "method": "ramped_half_and_half",
-    "parameters": {
-      "min_depth": 2,
-      "max_depth": 6
-    }
+    "min_depth": 3,
+    "max_depth": 8
   },
   
   "selection": {
@@ -44,11 +42,11 @@
   
   "crossover": {
     "strategy": "one_point_leaf_biased", 
-    "rate": 0.50,
+    "rate": 0.75,
     "parameters": {
       "terminal_prob": 0.1,
       "max_retries": 10,
-      "max_depth": 17
+      "max_depth": 20
     }
   },
   
@@ -58,21 +56,21 @@
     "apply_to": "offspring",
     "parameters": {
       "min_depth": 0,
-      "max_depth": 2,
+      "max_depth": 3,
       "max_retries": 10,
-      "max_tree_depth": 17
+      "max_tree_depth": 20
     }
   },
   
   "replacement": {
     "method": "elitist",
     "parameters": {
-      "elite_size": 10
+      "elite_size": 25
     }
   },
   
   "reproduction": {
-    "rate": 0.35
+    "rate": 0.2
   },
   
   "fitness": {
@@ -98,9 +96,10 @@
   },
   
   "logging": {
-    "records_dir": "test_evolution_records",
+    "records_dir": "large_scale_records",
     "save_populations": true,
     "save_genealogy": true,
+    "save_format": "json",
     "log_level": "INFO"
   }
 }

@@ -147,6 +147,7 @@ def main():
     parser.add_argument('--config', required=True, help='配置文件路徑')
     parser.add_argument('--test', action='store_true', help='測試模式 (覆蓋為小規模參數)')
     parser.add_argument('--verbose', '-v', action='store_true', help='詳細輸出模式')
+    parser.add_argument('--no-timestamp', action='store_true', help='不添加時間流水號到記錄目錄')
     
     args = parser.parse_args()
     
@@ -164,6 +165,13 @@ def main():
             print(f"   ├─ 族群大小: {config['evolution']['population_size']}")
             print(f"   ├─ 演化世代: {config['evolution']['generations']}")
             print(f"   └─ 記錄目錄: {config['logging']['records_dir']}")
+        
+        # 2.5. 添加時間流水號到記錄目錄
+        if not args.no_timestamp:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+            original_dir = config['logging']['records_dir']
+            config['logging']['records_dir'] = f"{original_dir}_{timestamp}"
+            print(f"🕐 添加時間流水號: {original_dir} -> {config['logging']['records_dir']}")
         
         # 3. 打印實驗信息
         print_experiment_info(config)

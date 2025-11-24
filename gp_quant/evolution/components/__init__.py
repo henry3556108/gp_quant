@@ -8,6 +8,7 @@
 from .engine import EvolutionEngine
 from .individual import EvolutionIndividual
 from .result import EvolutionResult
+from .loader import EvolutionLoader
 
 def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, config: dict):
     """
@@ -320,9 +321,7 @@ def create_evolution_engine(config: dict) -> EvolutionEngine:
             print(f"      ├─ 保存處理器: ❌ 創建失敗 ({e})")
     else:
         print(f"      ├─ 保存處理器: ⏸️ 未啟用")
-    
-    # 其他處理器暫時停用
-    print(f"      └─ 其他處理器: 暫時停用 (待實作)")
+
     
     print(f"✅ 演化引擎創建完成!")
     print(f"   📊 族群大小: {config['evolution']['population_size']}")
@@ -332,4 +331,4 @@ def create_evolution_engine(config: dict) -> EvolutionEngine:
     
     return engine
 
-__all__ = ['EvolutionEngine', 'EvolutionIndividual', 'EvolutionResult', 'create_evolution_engine']
+__all__ = ['EvolutionEngine', 'EvolutionIndividual', 'EvolutionResult', 'create_evolution_engine', 'EvolutionLoader']

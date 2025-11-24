@@ -32,8 +32,9 @@ pset.addPrimitive(np.logical_or, [BoolVector, BoolVector], BoolVector, name="log
 pset.addPrimitive(prim.logical_not, [BoolVector], BoolVector, name="logical_not")
 
 # Relational operators: These are the bridge. They take numerical vectors and return a boolean vector.
-pset.addPrimitive(operator.lt, [NumVector, NumVector], BoolVector, name="lt")
-pset.addPrimitive(operator.gt, [NumVector, NumVector], BoolVector, name="gt")
+# 使用 NumPy 的向量化比較運算，而不是 Python 的 operator
+pset.addPrimitive(np.less, [NumVector, NumVector], BoolVector, name="lt")
+pset.addPrimitive(np.greater, [NumVector, NumVector], BoolVector, name="gt")
 
 # Arithmetic operators: These operate on and return numerical vectors.
 pset.addPrimitive(prim.add, [NumVector, NumVector], NumVector, name="add")
@@ -69,11 +70,22 @@ pset.addTerminal(False, BoolVector, name="V_FALSE")
 
 # Ephemeral constants for generating random values at runtime
 
+# 使用 functools.partial 替代 lambda 函數以支持 pickle 序列化
+from functools import partial
+
+def rand_float():
+    """生成隨機浮點數"""
+    return random.uniform(-1, 1)
+
+def rand_int_n():
+    """生成隨機整數（用於回望期間）"""
+    return random.randint(5, 200)
+
 # Ephemeral constants for generating random float values
-pset.addEphemeralConstant("rand_float", lambda: random.uniform(-1, 1), float)
+pset.addEphemeralConstant("rand_float", rand_float, float)
 
 # Random integer constants for lookback periods (e.g., 5 to 200 days)
-pset.addEphemeralConstant("rand_int_n", lambda: random.randint(5, 200), int)
+pset.addEphemeralConstant("rand_int_n", rand_int_n, int)
 
 # # Add some fixed common lookback periods as terminals
 # pset.addTerminal(10, int)

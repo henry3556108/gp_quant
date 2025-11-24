@@ -110,13 +110,22 @@ class EvolutionIndividual(gp.PrimitiveTree):
         
         return cloned
     
+    def get_expression(self) -> str:
+        """獲取 GP 表達式字符串"""
+        return gp.PrimitiveTree.__str__(self)
+    
     def __str__(self) -> str:
-        """字符串表示"""
+        """字符串表示 - 返回 GP 表達式以支持編譯"""
+        # 返回 GP 表達式而不是元數據，這樣才能被 gp.compile 正確處理
+        return gp.PrimitiveTree.__str__(self)
+    
+    def __repr__(self) -> str:
+        """詳細字符串表示 - 顯示元數據"""
         fitness_str = f"{self.fitness_value:.4f}" if self.fitness_value is not None else "N/A"
         return f"Individual({self.id[:8]}..., gen={self.generation}, fitness={fitness_str}, op={self.operation})"
     
-    def __repr__(self) -> str:
-        """詳細字符串表示"""
+    def info(self) -> str:
+        """獲取個體信息摘要"""
         return (f"EvolutionIndividual(id='{self.id}', generation={self.generation}, "
                 f"fitness={self.fitness_value}, operation='{self.operation}', "
                 f"parents={len(self.parents)}, size={len(self)}, depth={self.height})")

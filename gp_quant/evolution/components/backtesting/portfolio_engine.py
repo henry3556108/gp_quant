@@ -153,10 +153,13 @@ class PortfolioBacktestingEngine:
             # Process signals for each stock
             for ticker in self.tickers:
                 signal = signals[ticker].get(date, 0)
+                allocation = self.rebalancer.allocations[ticker]
                 
-                if signal > 0:  # Buy signal
+                # 買入邏輯：訊號為 1 且目前沒有持股
+                if signal > 0 and allocation.shares_held == 0:
                     self.rebalancer.handle_buy_signal(ticker, date, prices[ticker])
-                elif signal < 0:  # Sell signal
+                # 賣出邏輯：訊號為 0 且目前有持股
+                elif signal == 0 and allocation.shares_held > 0:
                     self.rebalancer.handle_sell_signal(ticker, date, prices[ticker])
             
             # Update position values
@@ -198,7 +201,7 @@ class PortfolioBacktestingEngine:
             Dict mapping ticker to {date: signal} dict
         """
         from deap import gp
-        from gp_quant.gp.operators import NumVector
+        from ..gp.operators import NumVector
         
         signals = {}
         
@@ -236,27 +239,13 @@ class PortfolioBacktestingEngine:
                     signal_vector = np.full(len(price_vec), signal_vector, dtype=bool)
                 
                 # Convert boolean vector to trading signals
+                # 使用持續持有邏輯：True = 持有多頭 (1), False = 空倉 (0)
                 ticker_signals = {}
+                common_dates_set = set(self.common_dates)
                 for i, date in enumerate(df.index):
-                    if date in self.common_dates:
-                        # True = Buy, False = Sell/Hold
-                        # We need to detect transitions
-                        if i == 0:
-                            # First day: buy if signal is True
-                            ticker_signals[date] = 1 if signal_vector[i] else 0
-                        else:
-                            prev_signal = signal_vector[i-1]
-                            curr_signal = signal_vector[i]
-                            
-                            if not prev_signal and curr_signal:
-                                # Transition from False to True: Buy
-                                ticker_signals[date] = 1
-                            elif prev_signal and not curr_signal:
-                                # Transition from True to False: Sell
-                                ticker_signals[date] = -1
-                            else:
-                                # No transition: Hold
-                                ticker_signals[date] = 0
+                    if date in common_dates_set:
+                        # True = 持有多頭，False = 空倉
+                        ticker_signals[date] = 1 if signal_vector[i] else 0
                 
                 signals[ticker] = ticker_signals
                 
