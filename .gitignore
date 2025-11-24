@@ -305,4 +305,5 @@ archive/*
 # 4. 定期清理：
 #    git clean -fdx  # 刪除所有未追蹤的文件（小心使用！）
 
-scripts/*
+scripts/*large_scale_records_*/
+*.DS_Store
