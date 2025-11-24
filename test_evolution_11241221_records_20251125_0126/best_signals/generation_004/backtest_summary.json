@@ -1,0 +1,19 @@
+{
+  "generation": 4,
+  "individual_id": "f0b9bf4b-9f94-4f35-9fbd-a80a6acb7a2a",
+  "fitness": 0.7794929074668884,
+  "rule": "lt(ROC(ROC(ARG1, 19), id_int(id_int(id_int(id_int(33))))), div(RSI(RSI(avg(norm(ARG0, ARG1), id_int(176)), id_int(id_int(34))), id_int(id_int(id_int(192)))), add(norm(vol(ARG1, id_int(150)), add(ARG0, ARG0)), lag(avg(ARG0, 122), id_int(id_int(137))))))",
+  "metrics": {
+    "total_return": 0.7794929074668884,
+    "excess_return": 0.7794929074668884,
+    "sharpe_ratio": 1.8723979649196953,
+    "max_drawdown": -0.12020682969773383,
+    "volatility": 0.16119708936377541,
+    "calmar_ratio": 2.7783475594041898,
+    "win_rate": 0.5765407554671969,
+    "final_value": 177949.29074668884,
+    "pnl": 77949.29074668884
+  },
+  "total_transactions": 1802,
+  "timestamp": "2025-11-25T01:32:18.670316"
+}

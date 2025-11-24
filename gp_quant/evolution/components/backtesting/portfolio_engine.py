@@ -169,7 +169,23 @@ class PortfolioBacktestingEngine:
             portfolio_value = self.rebalancer.get_portfolio_value()
             equity_curve.append(portfolio_value)
             dates.append(date)
-        
+
+        # At the end of backtest, force liquidation of any remaining positions
+        # using the final day's close price so that entry_exit_points will have
+        # matching SELL transactions for long positions that are held to expiry.
+        if self.common_dates:
+            final_date = self.common_dates[-1]
+            final_prices = {ticker: self.backtest_data[ticker].loc[final_date, 'Close']
+                            for ticker in self.tickers}
+            for ticker in self.tickers:
+                allocation = self.rebalancer.allocations[ticker]
+                if allocation.shares_held > 0:
+                    # This SELL will not change total portfolio value because we
+                    # are using the same close price already used in
+                    # update_position_values, but it will create an explicit
+                    # closing transaction.
+                    self.rebalancer.handle_sell_signal(ticker, final_date, final_prices[ticker])
+
         # Create equity curve series
         equity_series = pd.Series(equity_curve, index=dates)
         

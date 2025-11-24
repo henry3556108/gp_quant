@@ -58,9 +58,8 @@ class OperationStrategy(EvolutionStrategy):
         if hasattr(reproduced, 'generation') and self.engine:
             reproduced.generation = getattr(self.engine, 'current_generation', 0) + 1
         
-        # 清除適應度 (需要重新評估)
-        if hasattr(reproduced, 'fitness') and hasattr(reproduced.fitness, 'values'):
-            del reproduced.fitness.values
+        # 保留適應度 (reproduction 不改變個體，不需要重新評估)
+        # 適應度已經在 deepcopy 時複製，保持 valid 狀態
         
         return reproduced
 
@@ -160,13 +159,23 @@ class SerialOperationStrategy(OperationStrategy):
         # 1. 交配操作
         crossover_offspring = []
         crossover_rate = config['crossover']['rate']
+        reproduction_rate = config.get('reproduction', {}).get('rate', 0.0)
+        
         if crossover_rate > 0:
-            num_crossover = int(population_size * crossover_rate)
+            # 計算需要的子代數量：總族群 - 複製保留的數量
+            num_offspring_needed = int(population_size * (1 - reproduction_rate))
+            # 每對父母產生 2 個子代，所以需要的父母對數是子代數的一半
+            num_crossover = num_offspring_needed // 2
+            
+            print(f"[DEBUG] 交配: population_size={population_size}, crossover_rate={crossover_rate}, reproduction_rate={reproduction_rate}")
+            print(f"[DEBUG] 交配: num_offspring_needed={num_offspring_needed}, num_crossover_pairs={num_crossover}")
+            
             try:
                 parent_pairs = self.engine.strategies['selection'].select_pairs(population, num_crossover, data)
                 logger.debug(f"選擇了 {len(parent_pairs) if parent_pairs else 0} 對父母")
                 if parent_pairs:
                     crossover_offspring = self.engine.strategies['crossover'].crossover(parent_pairs, data)
+                    print(f"[DEBUG] 交配產生: {len(crossover_offspring)} 個子代")
                     logger.debug(f"   交配產生 {len(crossover_offspring)} 個子代")
             except Exception as e:
                 logger.error(f"交配操作失敗: {e}")
@@ -178,12 +187,15 @@ class SerialOperationStrategy(OperationStrategy):
         mutation_rate = config['mutation']['rate']
         mutation_mode = config['mutation'].get('apply_to', 'offspring')
         
+        print(f"[DEBUG] 變異: rate={mutation_rate}, mode={mutation_mode}, crossover_offspring={len(crossover_offspring)}")
+        
         if mutation_rate > 0:
             if mutation_mode == 'offspring' and crossover_offspring:
                 # 對交配子代進行變異 (不記錄父母資訊，因為已在交配時記錄)
                 mutation_offspring = self.engine.strategies['mutation'].mutate(
                     crossover_offspring, data, record_parents=False
                 )
+                print(f"[DEBUG] 變異offspring模式產生: {len(mutation_offspring)} 個個體")
                 logger.debug(f"   對交配子代變異產生 {len(mutation_offspring)} 個個體")
             elif mutation_mode == 'population':
                 # 對原族群進行變異
@@ -193,6 +205,7 @@ class SerialOperationStrategy(OperationStrategy):
                 )
                 mutation_only_offspring = self.engine.strategies['mutation'].mutate(selected_for_mutation, data)
                 mutation_offspring = crossover_offspring + mutation_only_offspring
+                print(f"[DEBUG] 變異population模式: crossover={len(crossover_offspring)}, mutation={len(mutation_only_offspring)}, total={len(mutation_offspring)}")
                 logger.debug(f"   對族群變異產生 {len(mutation_only_offspring)} 個個體")
             else:
                 mutation_offspring = crossover_offspring
@@ -204,6 +217,7 @@ class SerialOperationStrategy(OperationStrategy):
         reproduction_rate = config.get('reproduction', {}).get('rate', 0.0)
         if reproduction_rate > 0:
             num_reproduce = int(population_size * reproduction_rate)
+            print(f"[DEBUG] 複製: population_size={population_size}, rate={reproduction_rate}, num_reproduce={num_reproduce}")
             selected_for_reproduction = self.engine.strategies['selection'].select_individuals(
                 population, num_reproduce, data
             )
@@ -211,10 +225,12 @@ class SerialOperationStrategy(OperationStrategy):
             reproduction_offspring = [
                 self._clone_and_record_reproduction(ind) for ind in selected_for_reproduction
             ]
+            print(f"[DEBUG] 複製產生: {len(reproduction_offspring)} 個優秀個體")
             logger.debug(f"   保留 {len(reproduction_offspring)} 個優秀個體")
         
         # 4. 合併所有子代
         all_offspring = mutation_offspring + reproduction_offspring
         
+        print(f"[DEBUG] 合併: mutation_offspring={len(mutation_offspring)}, reproduction_offspring={len(reproduction_offspring)}, total={len(all_offspring)}")
         logger.debug(f"   串聯操作完成: 總共 {len(all_offspring)} 個子代")
         return all_offspring

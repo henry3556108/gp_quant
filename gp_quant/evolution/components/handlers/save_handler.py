@@ -40,6 +40,8 @@ class SaveHandler(EventHandler):
             
         # 保存統計數據
         self.generation_stats = []
+        # 追蹤 global best 個體 ID，用於判斷何時更新全局最佳訊號
+        self.global_best_id: str | None = None
         
     def handle_event(self, event_name: str, **kwargs):
         """處理事件的通用方法"""
@@ -79,9 +81,37 @@ class SaveHandler(EventHandler):
         if self.save_genealogy:
             self._save_genealogy(generation, population)
         
-        # 保存最佳個體的交易訊號
-        if best_individual and engine:
-            self._save_best_individual_signals(generation, best_individual, engine)
+        # 1) 保存當代 generation best 的交易訊號
+        if engine is not None:
+            # 基於當代族群 fitness 計算當代最佳個體
+            valid_inds = [ind for ind in population
+                          if hasattr(ind, 'fitness') and getattr(ind.fitness, 'values', None)]
+            gen_best = None
+            if valid_inds:
+                gen_best = max(valid_inds, key=lambda ind: ind.fitness.values[0])
+
+            if gen_best is not None:
+                # 每一代都輸出對應的 generation_XYZ 目錄
+                self._save_best_individual_signals(
+                    generation,
+                    gen_best,
+                    engine,
+                    subdir_name=f"generation_{generation:03d}"
+                )
+
+        # 2) 保存 / 更新 global best 的交易訊號
+        # best_individual 由引擎提供，預期為 global best so far
+        if best_individual is not None and engine is not None:
+            current_id = getattr(best_individual, 'id', None)
+            if current_id is not None and current_id != self.global_best_id:
+                # global best 發生更新，重新輸出 global 目錄
+                self.global_best_id = current_id
+                self._save_best_individual_signals(
+                    generation,
+                    best_individual,
+                    engine,
+                    subdir_name="global"
+                )
             
     def on_evolution_complete(self, engine, result, **kwargs):
         """演化完成時的處理"""
@@ -229,7 +259,7 @@ class SaveHandler(EventHandler):
         variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
         return variance ** 0.5
     
-    def _save_best_individual_signals(self, generation: int, best_individual: EvolutionIndividual, engine):
+    def _save_best_individual_signals(self, generation: int, best_individual: EvolutionIndividual, engine, subdir_name: str | None = None):
         """
         保存最佳個體的交易訊號和回測結果
         
@@ -245,8 +275,12 @@ class SaveHandler(EventHandler):
             # 創建訊號保存目錄
             signals_dir = self.records_dir / "best_signals"
             signals_dir.mkdir(exist_ok=True)
-            
-            gen_dir = signals_dir / f"generation_{generation:03d}"
+
+            # 允許指定子目錄名稱：
+            # - generation_XXX：當代最佳
+            # - global：全局最佳
+            target_subdir = subdir_name if subdir_name is not None else f"generation_{generation:03d}"
+            gen_dir = signals_dir / target_subdir
             gen_dir.mkdir(exist_ok=True)
             
             # 獲取評估器

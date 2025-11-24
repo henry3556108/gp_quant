@@ -1,0 +1,19 @@
+{
+  "experiment_name": "test_evolution_11250051",
+  "final_generation": 25,
+  "best_fitness": 0.94374566031456,
+  "total_evaluations": 50000,
+  "execution_time": null,
+  "convergence_generation": 25,
+  "improvement_rate": 0.4971418708950537,
+  "fitness_statistics": {
+    "initial_best": 0.6303648830223081,
+    "initial_avg": 0.1955025334983477,
+    "initial_worst": -0.13298535413742094,
+    "final_best": 0.94374566031456,
+    "final_avg": 0.6687926364860691,
+    "final_worst": -0.18937983059883132,
+    "improvement_rate": 0.4971418708950537,
+    "convergence_generation": 25
+  }
+}

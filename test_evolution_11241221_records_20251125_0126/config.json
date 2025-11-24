@@ -1,0 +1,93 @@
+{
+  "experiment": {
+    "name": "test_evolution_11250051",
+    "description": "Test run with normal parameters"
+  },
+  "data": {
+    "tickers_dir": "history",
+    "mode": "portfolio",
+    "train_data_start": "2018-06-25",
+    "train_backtest_start": "2019-01-01",
+    "train_backtest_end": "2020-12-31",
+    "test_data_start": "2022-01-01",
+    "test_backtest_start": "2022-06-30",
+    "test_backtest_end": "2023-12-31"
+  },
+  "evolution": {
+    "generations": 25,
+    "population_size": 2000,
+    "initial_depth": 6,
+    "maximum_depth": 17,
+    "max_processors": 6
+  },
+  "operation_mode": "serial",
+  "initialization": {
+    "method": "ramped_half_and_half",
+    "parameters": {
+      "min_depth": 2,
+      "max_depth": 6
+    }
+  },
+  "selection": {
+    "method": "ranked_sus",
+    "parameters": {
+      "max_rank_fitness": 1.8,
+      "min_rank_fitness": 0.2
+    }
+  },
+  "crossover": {
+    "strategy": "one_point_leaf_biased",
+    "rate": 0.75,
+    "parameters": {
+      "terminal_prob": 0.1,
+      "max_retries": 10,
+      "max_depth": 17
+    }
+  },
+  "mutation": {
+    "strategy": "uniform",
+    "rate": 0.05,
+    "apply_to": "offspring",
+    "parameters": {
+      "min_depth": 0,
+      "max_depth": 2,
+      "max_retries": 10,
+      "max_tree_depth": 17
+    }
+  },
+  "replacement": {
+    "method": "elitist",
+    "parameters": {
+      "elite_size": 10
+    }
+  },
+  "reproduction": {
+    "rate": 0.2
+  },
+  "fitness": {
+    "function": "excess_return",
+    "evaluator": "portfolio_backtest",
+    "parameters": {
+      "max_processors": 1,
+      "cache_enabled": true
+    }
+  },
+  "termination": {
+    "method": "generation_limit",
+    "early_stopping": true,
+    "parameters": {
+      "patience": 5,
+      "min_delta": 0.001
+    }
+  },
+  "niching": {
+    "enabled": false
+  },
+  "logging": {
+    "records_dir": "test_evolution_11241221_records_20251125_0126",
+    "save_populations": true,
+    "save_genealogy": true,
+    "save_format": "json",
+    "log_level": "INFO"
+  }
+}

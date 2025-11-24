@@ -36,7 +36,8 @@ def load_and_process_data(data_dir: str, tickers: List[str]) -> Dict[str, pd.Dat
 
         # --- Data Cleaning and Processing ---
         # 1. Convert 'Date' column to datetime and set as index
-        df['Date'] = pd.to_datetime(df['Date'])
+        # Use utc=True to handle mixed timezones and convert to timezone-naive
+        df['Date'] = pd.to_datetime(df['Date'], utc=True).dt.tz_localize(None)
         df.set_index('Date', inplace=True)
 
         # 2. Handle missing values. The data shows entire rows can be empty.

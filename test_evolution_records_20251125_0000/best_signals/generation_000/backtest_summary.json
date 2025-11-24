@@ -1,0 +1,19 @@
+{
+  "generation": 0,
+  "individual_id": "5a243016-fe36-4e08-b8b8-2308cb0651f6",
+  "fitness": 0.10490372711181611,
+  "rule": "lt(min(ARG1, 104), ROC(ARG1, 73))",
+  "metrics": {
+    "total_return": 0.10490372711181611,
+    "excess_return": 0.10490372711181611,
+    "sharpe_ratio": 1.6654683740773206,
+    "max_drawdown": -0.03856256858953608,
+    "volatility": 0.060288008129880895,
+    "calmar_ratio": 2.675725054478638,
+    "win_rate": 0.17254901960784313,
+    "final_value": 110490.37271118161,
+    "pnl": 10490.372711181612
+  },
+  "total_transactions": 70,
+  "timestamp": "2025-11-25T00:00:44.172506"
+}

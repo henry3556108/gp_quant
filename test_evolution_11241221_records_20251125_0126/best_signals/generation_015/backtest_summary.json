@@ -1,0 +1,19 @@
+{
+  "generation": 15,
+  "individual_id": "f0b9bf4b-9f94-4f35-9fbd-a80a6acb7a2a",
+  "fitness": 0.8493387322998047,
+  "rule": "lt(ROC(ROC(ARG1, 19), id_int(id_int(id_int(id_int(33))))), div(RSI(RSI(avg(norm(ARG0, ARG1), id_int(176)), id_int(id_int(34))), id_int(id_int(133))), add(div(RSI(RSI(avg(norm(ARG0, ARG1), id_int(176)), id_int(id_int(34))), id_int(id_int(10))), add(norm(vol(div(RSI(RSI(avg(norm(ARG0, ARG1), id_int(176)), id_int(id_int(34))), id_int(id_int(63))), add(norm(vol(ARG1, 119), add(ARG0, ARG0)), lag(mul(ROC(mul(lag(ARG1, 179), mul(ARG0, ARG0)), 148), ROC(ARG0, 102)), id_int(id_int(136))))), 119), add(ARG0, ARG0)), ARG1)), lag(mul(ROC(ARG1, 148), ROC(ARG0, 102)), id_int(id_int(136))))))",
+  "metrics": {
+    "total_return": 0.8493387322998047,
+    "excess_return": 0.8493387322998047,
+    "sharpe_ratio": 1.9381260576945445,
+    "max_drawdown": -0.10762712822273504,
+    "volatility": 0.1661097426026613,
+    "calmar_ratio": 3.3439890875962517,
+    "win_rate": 0.5825049701789264,
+    "final_value": 184933.87322998047,
+    "pnl": 84933.87322998047
+  },
+  "total_transactions": 1320,
+  "timestamp": "2025-11-25T01:44:48.839783"
+}

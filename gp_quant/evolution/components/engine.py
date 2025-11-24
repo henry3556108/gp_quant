@@ -187,18 +187,19 @@ class EvolutionEngine:
                 # 5.1 使用操作策略產生子代
                 all_offspring: List[EvolutionIndividual] = self.strategies['operation'].execute_operations(self.population, data)
                 logger.debug(f"   總共產生 {len(all_offspring)} 個子代")
-                
+                print("all offspring len:", len(all_offspring))
                 # 5.6 評估新產生的子代 (跳過已評估的保留個體)
-                new_offspring: List[EvolutionIndividual] = [ind for ind in all_offspring if ind.fitness is None]
+                new_offspring: List[EvolutionIndividual] = [ind for ind in all_offspring if not ind.fitness.valid]
                 if new_offspring:
                     self.evaluator.evaluate_population(new_offspring, data)
                     logger.debug(f"   評估了 {len(new_offspring)} 個新個體")
-                
+                print("new offspring len:", len(new_offspring))
                 # 5.7 替換策略決定下一代族群
+                print("after evaluate population:", self.population)
                 self.population: List[EvolutionIndividual] = self.strategies['replacement'].replace(
                     self.population, all_offspring, data
                 )
-                
+                # print(self.population)
                 # 5.6 更新統計
                 self._update_best_individual()
                 self._record_generation_stats()

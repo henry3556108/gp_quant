@@ -209,7 +209,7 @@ logs/
 # Ignore all markdown files except specific ones
 # *.md
 *.txt
-*.csv
+# *.csv
 
 # But keep these important documentation files
 !README.md
@@ -306,4 +306,5 @@ archive/*
 #    git clean -fdx  # 刪除所有未追蹤的文件（小心使用！）
 
 scripts/*large_scale_records_*/
+scripts/*
 *.DS_Store
