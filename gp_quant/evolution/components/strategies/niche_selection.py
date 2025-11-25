@@ -7,6 +7,22 @@ Niche Selection Strategies
 
 使用階層式分群（Complete Linkage）將族群分為多個生態位，
 每個生態位保留 Top M 個體，形成 Elite Pool 用於親代選擇。
+
+---
+PnL Correlation 方法選擇建議：
+- Pearson Correlation（預設）：
+  * 衡量線性相關性
+  * 對異常值敏感
+  * 計算速度快
+  * 適用於 PnL curve 呈線性關係的情況
+  
+- Spearman Correlation（備選）：
+  * 衡量單調相關性（基於排序）
+  * 對異常值更穩健
+  * 計算速度較慢
+  * 適用於 PnL curve 有非線性關係或異常值的情況
+  
+建議：先使用 Pearson，如果發現聚類結果不穩定或受異常值影響，再改用 Spearman。
 """
 
 from typing import List, Dict, Any, Tuple
@@ -32,8 +48,8 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
     1. 計算 TED distance matrix（每個世代一次，快取）
     2. 使用階層式分群（Complete Linkage）建立聚類樹
     3. 自動搜索最佳 K 值（K = 2 到 max_k）
-       - 條件：Elite Pool 達成率 = 100%
-       - 選擇：CV 最小（或最大，根據 cv_criterion）
+       - 計算每個 K 的 Silhouette Score
+       - 使用一階導數法找到 knee point
     4. 每個 cluster 保留 Top M 個體（按 fitness）→ Elite Pool
     5. Crossover & Mutation 從 Elite Pool 選擇
     6. Reproduction 從整個 Population 選擇（使用 Tournament）
@@ -41,35 +57,35 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
     
     def __init__(self, 
                  max_k: int = 5,
+                 fixed_k: int = None,
                  top_m_per_cluster: int = 50,
                  cross_group_ratio: float = 0.3,
                  tournament_size: int = 3,
                  max_rank_fitness: float = 1.8,
                  min_rank_fitness: float = 0.2,
-                 cv_criterion: str = 'min',
                  n_jobs: int = 6):
         """
         初始化 TED Niche Selection Strategy
         
         Args:
             max_k: 最大分群數量（會搜索 K=2 到 max_k）
+            fixed_k: 固定的 K 值（如果設置，則不進行自動搜索）
             top_m_per_cluster: 每個 cluster 保留的個體數 M
             cross_group_ratio: 跨群配對比例（0.0-1.0）
             tournament_size: Tournament selection 的大小
             max_rank_fitness: Ranked SUS 的最大排名適應度
             min_rank_fitness: Ranked SUS 的最小排名適應度
-            cv_criterion: CV 選擇標準（'min' 或 'max'）
             n_jobs: 平行計算的 worker 數量
         """
         super().__init__()
         self.name = "ted_niche"
         self.max_k = max_k
+        self.fixed_k = fixed_k
         self.M = top_m_per_cluster
         self.cross_group_ratio = cross_group_ratio
         self.tournament_size = tournament_size
         self.max_rank_fitness = max_rank_fitness
         self.min_rank_fitness = min_rank_fitness
-        self.cv_criterion = cv_criterion
         self.n_jobs = n_jobs
         
         # 快取（每個世代只計算一次）
@@ -78,10 +94,14 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
         self._cached_elite_pool = None
         self._optimal_k = None
         
-        logger.info(f"初始化 TED Niche Selection: max_k={self.max_k}, M={self.M}, "
-                   f"cross_group_ratio={self.cross_group_ratio}, "
-                   f"cv_criterion={self.cv_criterion}, "
-                   f"tournament_size={self.tournament_size}")
+        if self.fixed_k is not None:
+            logger.info(f"初始化 TED Niche Selection: fixed_k={self.fixed_k}, M={self.M}, "
+                       f"cross_group_ratio={self.cross_group_ratio}, "
+                       f"tournament_size={self.tournament_size}")
+        else:
+            logger.info(f"初始化 TED Niche Selection: max_k={self.max_k} (使用 Silhouette + 一階導數法), M={self.M}, "
+                       f"cross_group_ratio={self.cross_group_ratio}, "
+                       f"tournament_size={self.tournament_size}")
     
     def _calculate_ted_for_pair(self, i: int, j: int, ind_i: Any, ind_j: Any) -> Tuple[int, int, float]:
         """
@@ -170,9 +190,10 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
     
     def _find_optimal_k_and_cluster(self, distance_matrix: np.ndarray, population: List) -> Tuple[int, np.ndarray]:
         """
-        自動搜索最佳 K 值並執行聚類
+        自動搜索最佳 K 值並執行聚類（或使用固定 K）
         
-        使用階層式聚類樹，從 K=2 到 max_k 搜索最佳 K：
+        如果設置了 fixed_k，則直接使用該值；
+        否則使用階層式聚類樹，從 K=2 到 max_k 搜索最佳 K：
         - 條件：Elite Pool 達成率 = 100%
         - 選擇：CV 最小（或最大，根據 cv_criterion）
         
@@ -186,52 +207,81 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
         from scipy.cluster.hierarchy import linkage, fcluster
         from scipy.spatial.distance import squareform
         
-        logger.info(f"自動搜索最佳 K (K=2~{self.max_k}, 標準={self.cv_criterion})...")
-        
         # 建立聚類樹（只建立一次）
         condensed_dist = squareform(distance_matrix, checks=False)
         linkage_matrix = linkage(condensed_dist, method='complete')
         
-        best_k = 2
-        best_cv = float('inf') if self.cv_criterion == 'min' else float('-inf')
-        best_achievement_rate = 0.0
+        # 如果設置了 fixed_k，直接使用
+        if self.fixed_k is not None:
+            logger.info(f"使用固定 K={self.fixed_k}")
+            cluster_labels = fcluster(linkage_matrix, self.fixed_k, criterion='maxclust') - 1
+            unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+            
+            # 計算統計信息
+            elite_pool_size = sum(min(count, self.M) for count in counts)
+            expected_size = self.fixed_k * self.M
+            achievement_rate = elite_pool_size / expected_size
+            cv = np.std(counts) / np.mean(counts) if np.mean(counts) > 0 else 0.0
+            
+            logger.info(f"✅ 固定 K={self.fixed_k}, CV={cv:.4f}, 達成率={achievement_rate*100:.1f}%")
+            logger.info(f"分群完成: {len(unique_labels)} 個 clusters")
+            for label, count in zip(unique_labels, counts):
+                logger.debug(f"  Cluster {label}: {count} 個體")
+            
+            return self.fixed_k, cluster_labels
         
-        # 搜索所有 K 值
+        # 否則自動搜索最佳 K（使用 Silhouette Score + 一階導數法）
+        from sklearn.metrics import silhouette_score
+        
+        logger.info(f"自動搜索最佳 K (K=2~{self.max_k}, 使用 Silhouette Score + 一階導數法)...")
+        
+        # 計算所有 K 值的 Silhouette Score
+        k_values = []
+        silhouette_scores = []
+        cluster_labels_dict = {}
+        
         for k in range(2, self.max_k + 1):
             # 從聚類樹切割出 K 個 clusters
             cluster_labels = fcluster(linkage_matrix, k, criterion='maxclust') - 1
-            unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+            cluster_labels_dict[k] = cluster_labels
             
-            # 計算 Elite Pool 達成率
-            elite_pool_size = sum(min(count, self.M) for count in counts)
-            expected_size = k * self.M
-            achievement_rate = elite_pool_size / expected_size
+            # 計算 Silhouette Score
+            try:
+                silhouette_avg = silhouette_score(distance_matrix, cluster_labels, metric='precomputed')
+                k_values.append(k)
+                silhouette_scores.append(silhouette_avg)
+                logger.debug(f"  K={k}: Silhouette={silhouette_avg:.4f}")
+            except Exception as e:
+                logger.warning(f"  K={k}: Silhouette 計算失敗 ({e})")
+        
+        # 使用一階導數法找 knee point
+        if len(silhouette_scores) < 2:
+            # 如果只有一個有效的 K，直接使用
+            best_k = k_values[0] if k_values else 2
+            best_silhouette = silhouette_scores[0] if silhouette_scores else 0.0
+            logger.warning(f"只有 {len(k_values)} 個有效 K 值，直接使用 K={best_k}")
+        else:
+            # 計算一階導數（斜率）
+            derivatives = np.diff(silhouette_scores)
             
-            # 只考慮 100% 達成率的 K
-            if achievement_rate >= 1.0:
-                # 計算 CV
-                cv = np.std(counts) / np.mean(counts)
-                
-                logger.debug(f"  K={k}: CV={cv:.4f}, 達成率={achievement_rate*100:.1f}%")
-                
-                # 根據標準選擇
-                is_better = False
-                if self.cv_criterion == 'min':
-                    if cv < best_cv:
-                        is_better = True
-                else:  # 'max'
-                    if cv > best_cv:
-                        is_better = True
-                
-                if is_better:
-                    best_cv = cv
-                    best_k = k
-                    best_achievement_rate = achievement_rate
+            # 找到斜率最大的點（改進最顯著的地方）
+            # knee point 是斜率開始變小的地方，即一階導數最大值之後
+            knee_idx = np.argmax(derivatives)
+            best_k = k_values[knee_idx + 1]  # +1 因為 diff 會減少一個元素
+            best_silhouette = silhouette_scores[knee_idx + 1]
+            
+            logger.info(f"一階導數分析:")
+            for i, (k, deriv) in enumerate(zip(k_values[:-1], derivatives)):
+                marker = " <- Knee Point" if i == knee_idx else ""
+                logger.debug(f"  K={k}->{k+1}: 斜率={deriv:.4f}{marker}")
         
-        logger.info(f"✅ 最佳 K={best_k}, CV={best_cv:.4f}, 達成率={best_achievement_rate*100:.1f}%")
+        logger.info(f"✅ 最佳 K={best_k}, Silhouette={best_silhouette:.4f}")
         
-        # 使用最佳 K 進行聚類
-        cluster_labels = fcluster(linkage_matrix, best_k, criterion='maxclust') - 1
+        # 使用最佳 K 的聚類結果
+        cluster_labels = cluster_labels_dict.get(best_k)
+        if cluster_labels is None:
+            # 如果沒有快取，重新計算
+            cluster_labels = fcluster(linkage_matrix, best_k, criterion='maxclust') - 1
         
         # 統計每個 cluster 的大小
         unique_labels, counts = np.unique(cluster_labels, return_counts=True)
@@ -484,7 +534,6 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
             'optimal_k': self._optimal_k,
             'top_m_per_cluster': self.M,
             'cross_group_ratio': self.cross_group_ratio,
-            'cv_criterion': self.cv_criterion,
             'tournament_size': self.tournament_size,
             'cached_generation': self._cached_generation,
             'elite_pool_size': len(self._cached_elite_pool) if self._cached_elite_pool else 0

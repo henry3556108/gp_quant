@@ -38,11 +38,10 @@
     "parameters": {
       "max_k": 5,
       "top_m_per_cluster": 50,
-      "cross_group_ratio": 0.3,
+      "cross_group_ratio": 0.7,
       "tournament_size": 3,
       "max_rank_fitness": 1.8,
       "min_rank_fitness": 0.2,
-      "cv_criterion": "min",
       "n_jobs": 6
     }
   },
@@ -59,7 +58,7 @@
   
   "mutation": {
     "strategy": "uniform",
-    "rate": 0.05,
+    "rate": 0.2,
     "apply_to": "offspring",
     "parameters": {
       "min_depth": 0,
@@ -77,7 +76,7 @@
   },
   
   "reproduction": {
-    "rate": 0.2
+    "rate": 0.05
   },
   
   "fitness": {
