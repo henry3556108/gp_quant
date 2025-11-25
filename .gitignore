@@ -133,7 +133,7 @@ $RECYCLE.BIN/
 *.msm
 *.msp
 *.lnk
-
+test_evolution_*
 # Linux
 *~
 .fuse_hidden*

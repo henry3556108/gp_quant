@@ -217,14 +217,26 @@ class PortfolioBacktestingEngine:
             Dict mapping ticker to {date: signal} dict
         """
         from deap import gp
-        from ..gp.operators import NumVector
+        
+        # Get NumVector type from pset's terminals keys
+        # This ensures we use the SAME NumVector class that was used to create pset
+        NumVector = None
+        for key in self.pset.terminals.keys():
+            if hasattr(key, '__name__') and 'NumVector' in key.__name__:
+                NumVector = key
+                break
+        
+        if NumVector is None:
+            raise ValueError("NumVector type not found in pset.terminals")
         
         signals = {}
         
         for ticker in self.tickers:
-            df = self.backtest_data[ticker]
+            # Use FULL data (self.data) for technical indicator calculation
+            # This ensures we have enough historical data for indicators like ROC(170)
+            df = self.data[ticker]
             
-            # Prepare price and volume vectors
+            # Prepare price and volume vectors from FULL data
             price_vec = df['Close'].values.astype(float)
             volume_vec = df['Volume'].values.astype(float)
             
@@ -258,6 +270,7 @@ class PortfolioBacktestingEngine:
                 # 使用持續持有邏輯：True = 持有多頭 (1), False = 空倉 (0)
                 ticker_signals = {}
                 common_dates_set = set(self.common_dates)
+                
                 for i, date in enumerate(df.index):
                     if date in common_dates_set:
                         # True = 持有多頭，False = 空倉
