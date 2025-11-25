@@ -17,7 +17,7 @@
   
   "evolution": {
     "generations": 25,
-    "population_size": 2000,
+    "population_size": 1000,
     "initial_depth": 6,
     "maximum_depth": 17,
     "max_processors": 6
