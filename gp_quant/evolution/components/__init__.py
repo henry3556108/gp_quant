@@ -36,7 +36,8 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
         'selection': {
             'ranked_sus': 'RankedSUSStrategy',
             'tournament': 'TournamentStrategy',
-            'roulette': 'RouletteStrategy'
+            'roulette': 'RouletteStrategy',
+            'ted_niche': 'TEDNicheSelectionStrategy'
         },
         'crossover': {
             'one_point_leaf_biased': 'CrossoverStrategy',
@@ -75,7 +76,11 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
         if strategy_type == 'initialization':
             from .strategies import initialization as strategy_module
         elif strategy_type == 'selection':
-            from .strategies import selection as strategy_module
+            # 特殊處理：TEDNicheSelectionStrategy 在 niche_selection 模組中
+            if strategy_name == 'ted_niche':
+                from .strategies import niche_selection as strategy_module
+            else:
+                from .strategies import selection as strategy_module
         elif strategy_type == 'crossover':
             from .strategies import crossover as strategy_module
         elif strategy_type == 'mutation':
