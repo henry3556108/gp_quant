@@ -75,7 +75,7 @@ class SaveHandler(EventHandler):
             self._save_population(generation, population)
             
         # 保存統計數據
-        self._save_generation_stats(generation, population, best_individual)
+        self._save_generation_stats(generation, population, best_individual, engine)
         
         # 保存譜系數據
         if self.save_genealogy:
@@ -192,7 +192,7 @@ class SaveHandler(EventHandler):
             json.dump(pop_data, f, indent=2, ensure_ascii=False)
                 
     def _save_generation_stats(self, generation: int, population: List[EvolutionIndividual], 
-                             best_individual: EvolutionIndividual):
+                             best_individual: EvolutionIndividual, engine=None):
         """保存世代統計數據"""
         # 計算統計數據
         valid_individuals = [ind for ind in population if hasattr(ind.fitness, 'values') and ind.fitness.values]
@@ -230,6 +230,13 @@ class SaveHandler(EventHandler):
                 'best_tree_size': None,
                 'best_tree_depth': None
             }
+        
+        # 添加選擇策略的統計信息（如果可用）
+        if engine and hasattr(engine, 'strategies'):
+            selection_strategy = engine.strategies.get('selection')
+            if selection_strategy and hasattr(selection_strategy, 'get_stats'):
+                strategy_stats = selection_strategy.get_stats()
+                stats['selection_strategy'] = strategy_stats
             
         self.generation_stats.append(stats)
         
