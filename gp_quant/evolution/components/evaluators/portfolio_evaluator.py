@@ -234,11 +234,20 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
         
         for individual in tqdm(individuals, desc="評估個體", unit="個體"):
             try:
-                # 使用 get_fitness 方法評估
-                fitness_value = self.backtest_engine.get_fitness(individual, fitness_metric=fitness_metric)
+                # 使用 backtest 方法獲取完整結果（而不是 get_fitness）
+                result = self.backtest_engine.backtest(individual)
+                
+                # 計算 fitness
+                fitness_value = result['metrics'][fitness_metric]
                 individual.fitness.values = (fitness_value,)
                 
-                # 緩存結果
+                # 快取 PnL curve 到 individual.metadata（用於 PnL Niche Selection）
+                equity_curve = result['equity_curve']
+                pnl_curve = equity_curve - self.backtest_engine.initial_capital
+                individual.add_metadata('pnl_curve', pnl_curve)
+                individual.add_metadata('equity_curve', equity_curve)
+                
+                # 緩存 fitness 結果
                 if self.cache_enabled:
                     self.fitness_cache[individual.id] = fitness_value
                     
