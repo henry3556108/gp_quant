@@ -127,10 +127,14 @@ class ParallelOperationStrategy(OperationStrategy):
                     mutation_count += 1
                     
             else:
-                # 保留操作 (直接複製)
+                # 保留操作 (委託給保留策略)
+                reproduction_rate = config.get('reproduction', {}).get('rate', 0.0)
+                # 這裡的邏輯稍微複雜，因為並聯操作是逐個個體決定的
+                # 我們暫時使用標準保留策略的邏輯：複製選中的個體
                 selected = self.engine.strategies['selection'].select_individuals(population, 1, data)
                 if selected:
-                    reproduced = self._clone_and_record_reproduction(selected[0])
+                    # 使用保留策略的輔助方法來複製
+                    reproduced = self.engine.strategies['reproduction']._clone_and_record(selected[0])
                     offspring.append(reproduced)
                     reproduction_count += 1
         
@@ -162,10 +166,15 @@ class SerialOperationStrategy(OperationStrategy):
         reproduction_rate = config.get('reproduction', {}).get('rate', 0.0)
         
         if crossover_rate > 0:
-            # 計算需要的子代數量：總族群 - 複製保留的數量
-            num_offspring_needed = int(population_size * (1 - reproduction_rate))
-            # 每對父母產生 2 個子代，所以需要的父母對數是子代數的一半
-            num_crossover = num_offspring_needed // 2
+            # Calculate reproduction count first to ensure total sum is correct
+            num_reproduce = int(population_size * reproduction_rate)
+            
+            # Calculate needed offspring as the remainder
+            num_offspring_needed = population_size - num_reproduce
+            
+            # Calculate pairs needed (round up)
+            # If we need 79, we need 40 pairs (producing 80), then trim 1
+            num_crossover = (num_offspring_needed + 1) // 2
             
             print(f"[DEBUG] 交配: population_size={population_size}, crossover_rate={crossover_rate}, reproduction_rate={reproduction_rate}")
             print(f"[DEBUG] 交配: num_offspring_needed={num_offspring_needed}, num_crossover_pairs={num_crossover}")
@@ -175,7 +184,12 @@ class SerialOperationStrategy(OperationStrategy):
                 logger.debug(f"選擇了 {len(parent_pairs) if parent_pairs else 0} 對父母")
                 if parent_pairs:
                     crossover_offspring = self.engine.strategies['crossover'].crossover(parent_pairs, data)
-                    print(f"[DEBUG] 交配產生: {len(crossover_offspring)} 個子代")
+                    
+                    # Trim to exact needed size
+                    if len(crossover_offspring) > num_offspring_needed:
+                        crossover_offspring = crossover_offspring[:num_offspring_needed]
+                        
+                    print(f"[DEBUG] 交配產生: {len(crossover_offspring)} 個子代 (Target: {num_offspring_needed})")
                     logger.debug(f"   交配產生 {len(crossover_offspring)} 個子代")
             except Exception as e:
                 logger.error(f"交配操作失敗: {e}")
@@ -218,13 +232,15 @@ class SerialOperationStrategy(OperationStrategy):
         if reproduction_rate > 0:
             num_reproduce = int(population_size * reproduction_rate)
             print(f"[DEBUG] 複製: population_size={population_size}, rate={reproduction_rate}, num_reproduce={num_reproduce}")
-            selected_for_reproduction = self.engine.strategies['selection'].select_individuals(
-                population, num_reproduce, data
-            )
-            # 複製並記錄父母資訊
-            reproduction_offspring = [
-                self._clone_and_record_reproduction(ind) for ind in selected_for_reproduction
-            ]
+            
+            # 使用保留策略執行保留
+            if 'reproduction' in self.engine.strategies:
+                reproduction_offspring = self.engine.strategies['reproduction'].reproduce(
+                    population, num_reproduce, data
+                )
+            else:
+                logger.error("未找到保留策略，跳過保留操作")
+                
             print(f"[DEBUG] 複製產生: {len(reproduction_offspring)} 個優秀個體")
             logger.debug(f"   保留 {len(reproduction_offspring)} 個優秀個體")
         

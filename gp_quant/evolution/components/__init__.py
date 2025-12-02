@@ -59,6 +59,11 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
         'operation': {
             'parallel': 'ParallelOperationStrategy',
             'serial': 'SerialOperationStrategy'
+        },
+        'reproduction': {
+            'standard': 'StandardReproduction',
+            'elitist': 'ElitistReproduction',
+            'niche_elitist': 'NicheElitistReproduction'
         }
     }
     
@@ -90,6 +95,8 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
             from .strategies import replacement as strategy_module
         elif strategy_type == 'operation':
             from .strategies import operation as strategy_module
+        elif strategy_type == 'reproduction':
+            from .strategies import reproduction as strategy_module
         else:
             raise ValueError(f"未知的策略類型: {strategy_type}")
         
@@ -306,6 +313,17 @@ def create_evolution_engine(config: dict) -> EvolutionEngine:
     operation_strategy = _create_strategy('operation', operation_mode, strategies, config)
     engine.add_strategy('operation', operation_strategy)
     print(f"      └─ 操作策略: {operation_mode}")
+    
+    # 7. 保留策略
+    reproduction_config = config.get('reproduction', {})
+    reproduction_method = reproduction_config.get('method', 'standard')
+    # 如果沒有指定方法但有 rate，默認使用 standard
+    if 'method' not in reproduction_config and reproduction_config.get('rate', 0) > 0:
+        reproduction_method = 'standard'
+        
+    reproduction_strategy = _create_strategy('reproduction', reproduction_method, strategies, config)
+    engine.add_strategy('reproduction', reproduction_strategy)
+    print(f"      ├─ 保留策略: {reproduction_method} (rate={reproduction_config.get('rate', 0)})")
     
     # 設置適應度評估器 (根據配置動態選擇)
     print(f"   🎯 設置適應度評估器...")

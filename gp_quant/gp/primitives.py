@@ -26,6 +26,13 @@ def protected_div(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     """Vectorized protected division that returns 1.0 in case of division by zero."""
     with np.errstate(divide='ignore', invalid='ignore'):
         result = np.divide(left, right)
+        
+    # Handle scalar/0-d array case
+    if np.ndim(result) == 0:
+        if np.abs(right) < 1e-6 or np.isinf(result) or np.isnan(result):
+            return np.array(1.0) if isinstance(result, np.ndarray) else 1.0
+        return result
+
     # Where the divisor is close to zero, the result is 1.0
     # Also handles cases where the result might be inf or NaN
     result[np.abs(right) < 1e-6] = 1.0
@@ -37,6 +44,8 @@ def protected_div(left: np.ndarray, right: np.ndarray) -> np.ndarray:
 
 def moving_average(series: np.ndarray, n: int) -> np.ndarray:
     """Calculates the vectorized moving average."""
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return float(series)
     if n == 0:
         return series
     try:
@@ -47,6 +56,8 @@ def moving_average(series: np.ndarray, n: int) -> np.ndarray:
 
 def moving_max(series: np.ndarray, n: int) -> np.ndarray:
     """Calculates the vectorized moving maximum."""
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return float(series)
     if n == 0:
         return series
     try:
@@ -57,6 +68,8 @@ def moving_max(series: np.ndarray, n: int) -> np.ndarray:
 
 def moving_min(series: np.ndarray, n: int) -> np.ndarray:
     """Calculates the vectorized moving minimum."""
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return float(series)
     if n == 0:
         return series
     try:
@@ -67,6 +80,8 @@ def moving_min(series: np.ndarray, n: int) -> np.ndarray:
 
 def lag(series: np.ndarray, n: int) -> np.ndarray:
     """Calculates the vectorized lag."""
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return float(series)
     if n <= 0:
         return series
     result = np.full_like(series, np.nan)
@@ -75,6 +90,8 @@ def lag(series: np.ndarray, n: int) -> np.ndarray:
 
 def volatility(series: np.ndarray, n: int) -> np.ndarray:
     """Calculates the vectorized volatility."""
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return 0.0
     if n < 2:
         return np.zeros_like(series)
     
@@ -97,6 +114,8 @@ def volatility(series: np.ndarray, n: int) -> np.ndarray:
 
 def rate_of_change(series: np.ndarray, n: int) -> np.ndarray:
     """Calculates the vectorized Rate of Change (ROC)."""
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return 0.0
     if n < 1:
         return np.zeros_like(series)
     
@@ -109,6 +128,8 @@ def rate_of_change(series: np.ndarray, n: int) -> np.ndarray:
 
 def relative_strength_index(series: np.ndarray, n: int) -> np.ndarray:
     """Calculates the vectorized Relative Strength Index (RSI)."""
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return 50.0
     if n < 1:
         return np.full_like(series, 50.0)
     
@@ -130,47 +151,147 @@ def relative_strength_index(series: np.ndarray, n: int) -> np.ndarray:
         # Fallback: return neutral RSI
         return np.full_like(series, 50.0)
 
+# --- New Primitives (Alpha101 inspired) ---
+
+def ts_rank(series: np.ndarray, n: int) -> np.ndarray:
+    """
+    Calculates the rolling rank (normalized to [0, 1]).
+    ts_rank(x, d) = (rank(x) - 1) / (d - 1)
+    """
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return 0.5
+    if n < 2:
+        return np.zeros_like(series)
+        
+    try:
+        s = pd.Series(series, dtype=np.float64)
+        # rank() returns 1 to N
+        ranks = s.rolling(window=n, min_periods=1).rank()
+        counts = s.rolling(window=n, min_periods=1).count()
+        
+        # Normalize: (rank - 1) / (count - 1)
+        # Avoid division by zero when count <= 1
+        with np.errstate(divide='ignore', invalid='ignore'):
+            result = (ranks - 1) / (counts - 1)
+            
+        result = result.fillna(0.5) # Default to middle rank
+        result[counts <= 1] = 0.5
+        
+        return result.to_numpy()
+    except Exception:
+        return np.full_like(series, 0.5)
+
+def correlation(series1: np.ndarray, series2: np.ndarray, n: int) -> np.ndarray:
+    """Calculates the rolling correlation between two series."""
+    if isinstance(series1, (float, int, np.float64, np.int64)) or np.ndim(series1) == 0 or \
+       isinstance(series2, (float, int, np.float64, np.int64)) or np.ndim(series2) == 0:
+        return np.zeros_like(series1) if isinstance(series1, np.ndarray) and np.ndim(series1) > 0 else 0.0
+        
+    if n < 2:
+        return np.zeros_like(series1)
+        
+    try:
+        s1 = pd.Series(series1, dtype=np.float64)
+        s2 = pd.Series(series2, dtype=np.float64)
+        return s1.rolling(window=n, min_periods=2).corr(s2).fillna(0.0).to_numpy()
+    except Exception:
+        return np.zeros_like(series1)
+
+def decay_linear(series: np.ndarray, n: int) -> np.ndarray:
+    """
+    Calculates the linear weighted moving average.
+    Weights are 1, 2, ..., n (most recent has weight n).
+    """
+    if isinstance(series, (float, int, np.float64, np.int64)) or np.ndim(series) == 0:
+        return float(series)
+    if n < 1:
+        return series
+        
+    try:
+        # Efficient implementation using pandas rolling apply is slow.
+        # We can use a trick: sum of moving sums?
+        # LWMA = (Sum(Price * Weight)) / Sum(Weights)
+        # This is hard to vectorize efficiently without convolution.
+        # Let's use numpy convolve for full series? No, it's rolling.
+        # For small n, we can iterate? No, slow.
+        # Let's use a simplified approach or pandas apply for now, assuming n is small (<200).
+        
+        # Optimization:
+        # LWMA[t] = (P[t]*n + P[t-1]*(n-1) + ... + P[t-n+1]*1) / Sum(1..n)
+        
+        weights = np.arange(1, n + 1)
+        sum_weights = np.sum(weights)
+        
+        # Use strided view for efficiency if possible, but pandas apply is safer for NaN handling
+        # Given the constraints, let's use a simple convolution if no NaNs, but we have NaNs.
+        # Let's stick to pandas rolling apply for correctness first.
+        
+        def weighted_mean(x):
+            return np.dot(x, weights) / sum_weights
+            
+        s = pd.Series(series, dtype=np.float64)
+        # raw=True speeds up apply significantly
+        return s.rolling(window=n).apply(weighted_mean, raw=True).bfill().to_numpy()
+        
+    except Exception:
+        return series
+
+def log(series: np.ndarray) -> np.ndarray:
+    """Calculates natural logarithm (safe)."""
+    if isinstance(series, (float, int, np.float64, np.int64)):
+        return np.log(abs(series)) if series != 0 else 0.0
+        
+    # Use np.log on absolute value, handle 0
+    s_abs = np.abs(series)
+    
+    # Handle scalar/0-d array case
+    if np.ndim(s_abs) == 0:
+        if s_abs < 1e-9:
+            s_abs = 1e-9
+    else:
+        # Replace 0 with small epsilon to avoid -inf
+        s_abs[s_abs < 1e-9] = 1e-9
+        
+    return np.log(s_abs)
+
+def sign(series: np.ndarray) -> np.ndarray:
+    """Calculates sign of the series (1, 0, -1)."""
+    return np.sign(series)
+
+def abs_val(series: np.ndarray) -> np.ndarray:
+    """Calculates absolute value."""
+    return np.abs(series)
+
 # --- Safe Arithmetic Primitives ---
 
 def add(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Vectorized addition."""
-    return np.add(a, b)
+    """Vectorized addition with overflow protection."""
+    with np.errstate(over='ignore', invalid='ignore'):
+        result = np.add(a, b)
+    result = np.nan_to_num(result, nan=0.0, posinf=1e300, neginf=-1e300)
+    return result
 
 def sub(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Vectorized subtraction."""
-    return np.subtract(a, b)
+    """Vectorized subtraction with overflow protection."""
+    with np.errstate(over='ignore', invalid='ignore'):
+        result = np.subtract(a, b)
+    result = np.nan_to_num(result, nan=0.0, posinf=1e300, neginf=-1e300)
+    return result
 
 def logical_not(a: np.ndarray) -> np.ndarray:
     """Vectorized logical NOT."""
     return np.logical_not(a)
 
 def mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Vectorized multiplication with overflow protection."""
-    finfo = np.finfo(np.float64)
-    # Ignore warnings for this check, we handle it manually
-    with np.errstate(over='ignore'):
-        # Check where an overflow would occur: abs(a) * abs(b) > max_float
-        # This is equivalent to: abs(a) > max_float / abs(b)
-        # Add a small epsilon to b to avoid division by zero in the check itself
-        abs_b_safe = np.abs(b) + 1e-9
-        problematic_indices = np.where(np.abs(a) > finfo.max / abs_b_safe)
-    
-    if len(problematic_indices[0]) > 0:
-        idx = problematic_indices[0][0]
-        error_msg = (
-            f"Overflow detected in mul primitive!\n"
-            f"Index: {idx}\n"
-            f"Value a[{idx}]: {a[idx]:.2e}\n"
-            f"Value b[{idx}]: {b[idx]:.2e}\n"
-            f"Result would exceed: {finfo.max:.2e}"
-        )
-        # Print the error for visibility before the evolution halts
-        print("\n--- ASSERTION TRIGGERED ---")
-        print(error_msg)
-        print("--- END ASSERTION ---\n")
-        raise AssertionError(error_msg)
+    """Vectorized multiplication with overflow protection (clamping)."""
+    # Use numpy's error handling to catch overflows and invalid operations
+    with np.errstate(over='ignore', invalid='ignore'):
+        result = np.multiply(a, b)
         
-    return np.multiply(a, b)
+    # Clamp infinite values to a large finite number
+    # using 1e300 as a safe upper bound for float64
+    result = np.nan_to_num(result, nan=0.0, posinf=1e300, neginf=-1e300)
+    return result
 
 def norm(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """

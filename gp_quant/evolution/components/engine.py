@@ -108,7 +108,7 @@ class EvolutionEngine:
     
     def _validate_components(self):
         """驗證所有必要組件是否已設置"""
-        required_strategies = ['initialization', 'selection', 'crossover', 'mutation', 'replacement', 'operation']
+        required_strategies = ['initialization', 'selection', 'crossover', 'mutation', 'replacement', 'operation', 'reproduction']
         
         for strategy_type in required_strategies:
             if strategy_type not in self.strategies:
@@ -193,9 +193,9 @@ class EvolutionEngine:
                 if new_offspring:
                     self.evaluator.evaluate_population(new_offspring, data)
                     logger.debug(f"   評估了 {len(new_offspring)} 個新個體")
-                print("new offspring len:", len(new_offspring))
+                # print("new offspring len:", len(new_offspring))
                 # 5.7 替換策略決定下一代族群
-                print("after evaluate population:", self.population)
+                # print("after evaluate population:", self.population)
                 self.population: List[EvolutionIndividual] = self.strategies['replacement'].replace(
                     self.population, all_offspring, data
                 )

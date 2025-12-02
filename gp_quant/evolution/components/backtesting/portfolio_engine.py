@@ -63,7 +63,7 @@ class PortfolioBacktestingEngine:
         # and to properly set terminal values
         import copy
         if pset is None:
-            from gp_quant.gp.operators import pset as default_pset
+            from gp_quant.evolution.components.gp.operators import pset as default_pset
             self.pset = copy.deepcopy(default_pset)
         else:
             self.pset = copy.deepcopy(pset)
@@ -250,7 +250,10 @@ class PortfolioBacktestingEngine:
                 self.pset.terminals[NumVector][1].value = volume_vec
                 
                 # Compile the individual
-                func = gp.compile(expr=individual, pset=self.pset)
+                # Use str(individual) to avoid potential pickling issues with Ephemeral constants
+                # or mismatched terminal objects.
+                expr = str(individual)
+                func = gp.compile(expr=expr, pset=self.pset)
                 
                 # Execute - try without arguments first
                 try:
@@ -262,9 +265,19 @@ class PortfolioBacktestingEngine:
                     else:
                         raise
                 
-                # Handle single boolean return
-                if not isinstance(signal_vector, np.ndarray):
+                # Handle single boolean return (scalar broadcasting)
+                # Handle scalar outputs (boolean or numpy scalar)
+                if isinstance(signal_vector, (bool, np.bool_)):
                     signal_vector = np.full(len(price_vec), signal_vector, dtype=bool)
+                elif isinstance(signal_vector, np.ndarray):
+                    # Handle 0-d array or 1-element array
+                    if signal_vector.ndim == 0 or signal_vector.size == 1:
+                        # Extract scalar value
+                        scalar_val = signal_vector.item() if signal_vector.ndim == 0 else signal_vector[0]
+                        signal_vector = np.full(len(price_vec), bool(scalar_val), dtype=bool)
+                else:
+                    # Fallback for other scalar types (float, int, etc.)
+                    signal_vector = np.full(len(price_vec), bool(signal_vector), dtype=bool)
                 
                 # Convert boolean vector to trading signals
                 # 使用持續持有邏輯：True = 持有多頭 (1), False = 空倉 (0)
@@ -280,6 +293,9 @@ class PortfolioBacktestingEngine:
                 
             except Exception as e:
                 # If evaluation fails, no signals
+                import traceback
+                print(f"❌ Error evaluating individual for {ticker}: {e}")
+                traceback.print_exc()
                 ticker_signals = {date: 0 for date in self.common_dates}
                 signals[ticker] = ticker_signals
         
@@ -302,13 +318,77 @@ class PortfolioBacktestingEngine:
         
         return per_stock_pnl
     
-    def get_fitness(self, individual: Any, fitness_metric: str = 'excess_return') -> float:
+    def calculate_consistent_sharpe(self, equity_curve: pd.Series, **kwargs) -> float:
+        """
+        Calculate Consistent Sharpe Ratio: Mean(Annual Sharpes) - lambda * Std(Annual Sharpes)
+        
+        Args:
+            equity_curve: Portfolio equity curve
+            **kwargs: Parameters (e.g., 'lambda')
+            
+        Returns:
+            Consistent Sharpe score
+        """
+        # Get parameters
+        lambda_param = kwargs.get('lambda', 1.0)
+        
+        # Edge case: insufficient data
+        if len(equity_curve) < 252: # Require at least ~1 year of data
+            return 0.0
+            
+        # Calculate daily returns
+        returns = equity_curve.pct_change().dropna()
+        returns = returns[np.isfinite(returns)]
+        
+        if len(returns) == 0:
+            return 0.0
+            
+        # Group by year
+        annual_sharpes = []
+        years = returns.index.year.unique()
+        
+        for year in years:
+            year_returns = returns[returns.index.year == year]
+            
+            # Skip years with too few data points (e.g. < 100 days)
+            if len(year_returns) < 100:
+                continue
+                
+            mean_ret = year_returns.mean()
+            std_ret = year_returns.std()
+            
+            if std_ret == 0 or not np.isfinite(std_ret):
+                sharpe = 0.0
+            else:
+                sharpe = (mean_ret * 252) / (std_ret * np.sqrt(252))
+                
+            # Clip extreme values
+            sharpe = max(min(sharpe, 10.0), -10.0)
+            annual_sharpes.append(sharpe)
+        
+        if not annual_sharpes:
+            return 0.0
+            
+        # Calculate fitness
+        mean_sharpe = np.mean(annual_sharpes)
+        std_sharpe = np.std(annual_sharpes)
+        
+        fitness = mean_sharpe - (lambda_param * std_sharpe)
+        
+        # Sanity check
+        if not np.isfinite(fitness):
+            return -100000.0
+            
+        return fitness
+    
+    def get_fitness(self, individual: Any, fitness_metric: str = 'excess_return', fitness_params: Dict[str, Any] = None) -> float:
         """
         Calculate fitness score for an individual.
         
         Args:
             individual: DEAP individual
-            fitness_metric: 'excess_return' or 'sharpe_ratio'
+            fitness_metric: 'excess_return', 'sharpe_ratio', or 'consistent_sharpe'
+            fitness_params: Optional parameters for fitness calculation
             
         Returns:
             Fitness score
@@ -348,6 +428,13 @@ class PortfolioBacktestingEngine:
                 return -100000.0
             
             return sharpe
+            
+        elif fitness_metric == 'consistent_sharpe':
+            result = self.backtest(individual)
+            equity_curve = result['equity_curve']
+            params = fitness_params or {}
+            return self.calculate_consistent_sharpe(equity_curve, **params)
+            
         else:
             # Default: excess return
             result = self.backtest(individual)

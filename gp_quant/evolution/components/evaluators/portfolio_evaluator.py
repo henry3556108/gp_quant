@@ -60,7 +60,8 @@ def _evaluate_individual_worker(individual_data: tuple, engine_config: Dict[str,
         
         # 評估個體 - 使用 get_fitness 方法
         fitness_metric = fitness_config.get('function', 'excess_return')
-        fitness_value = engine.get_fitness(individual_tree, fitness_metric=fitness_metric)
+        fitness_params = fitness_config.get('parameters', {})
+        fitness_value = engine.get_fitness(individual_tree, fitness_metric=fitness_metric, fitness_params=fitness_params)
         
         return individual_id, fitness_value
         
@@ -79,13 +80,14 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
     注意：目前使用單進程評估以避免數據序列化問題。
     """
     
-    def __init__(self, max_processors: int = 1, cache_enabled: bool = True):
+    def __init__(self, max_processors: int = 1, cache_enabled: bool = True, **kwargs):
         """
         初始化評估器
         
         Args:
             max_processors: 最大並行進程數（目前強制為1以避免序列化問題）
             cache_enabled: 是否啟用適應度緩存
+            **kwargs: 其他參數（如 fitness function 參數），在此忽略
         """
         self.max_processors = 1  # 強制單進程以避免 DataFrame 序列化問題
         self.cache_enabled = cache_enabled
@@ -150,7 +152,8 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
             
             # 評估適應度
             fitness_metric = self.engine.config['fitness']['function']
-            fitness_value = engine.evaluate(individual.tree, fitness_metric=fitness_metric)[0]
+            fitness_params = self.engine.config['fitness'].get('parameters', {})
+            fitness_value = engine.get_fitness(individual.tree, fitness_metric=fitness_metric, fitness_params=fitness_params)
             
             # 緩存結果
             if self.cache_enabled:
@@ -238,7 +241,12 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
                 result = self.backtest_engine.backtest(individual)
                 
                 # 計算 fitness
-                fitness_value = result['metrics'][fitness_metric]
+                if fitness_metric == 'consistent_sharpe':
+                    fitness_params = self.engine.config['fitness'].get('parameters', {})
+                    fitness_value = self.backtest_engine.calculate_consistent_sharpe(result['equity_curve'], **fitness_params)
+                else:
+                    fitness_value = result['metrics'][fitness_metric]
+                
                 individual.fitness.values = (fitness_value,)
                 
                 # 快取 PnL curve 到 individual.metadata（用於 PnL Niche Selection）
@@ -277,7 +285,8 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
             }
             
             fitness_config = {
-                'function': self.engine.config['fitness']['function']
+                'function': self.engine.config['fitness']['function'],
+                'parameters': self.engine.config['fitness'].get('parameters', {})
             }
             
             # 準備個體數據 (id, tree)
