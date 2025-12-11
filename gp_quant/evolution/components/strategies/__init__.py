@@ -13,7 +13,7 @@
 from .base import EvolutionStrategy
 from .initialization import *
 from .selection import *
-from .niche_selection import TEDNicheSelectionStrategy, PnLNicheSelectionStrategy
+from .niche_selection import TEDNicheSelectionStrategy, PnLNicheSelectionStrategy, SignalNicheSelectionStrategy
 from .crossover import *
 from .mutation import *
 from .replacement import *
@@ -25,7 +25,7 @@ __all__ = [
     'InitializationStrategy', 'RampedHalfAndHalfStrategy', 'FullStrategy', 'GrowStrategy',
     # 選擇策略
     'SelectionStrategy', 'RankedSUSStrategy', 'TournamentStrategy', 'RouletteStrategy', 
-    'TEDNicheSelectionStrategy', 'PnLNicheSelectionStrategy',
+    'TEDNicheSelectionStrategy', 'PnLNicheSelectionStrategy', 'SignalNicheSelectionStrategy',
     # 交配策略
     'CrossoverStrategy', 'OnePointCrossoverStrategy', 'UniformCrossoverStrategy',
     # 變異策略

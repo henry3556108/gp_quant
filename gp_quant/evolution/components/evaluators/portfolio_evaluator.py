@@ -17,18 +17,24 @@ from ..backtesting import PortfolioBacktestingEngine
 
 logger = logging.getLogger(__name__)
 
+def setup_deap_creator():
+    """初始化 DEAP creator (在子進程中需要重新初始化)"""
+    from deap import creator, base, gp
+    
+    # 檢查是否已經創建
+    if not hasattr(creator, 'FitnessMax'):
+        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+    
+    if not hasattr(creator, 'Individual'):
+        creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMax)
+
 def _evaluate_individual_worker(individual_data: tuple, engine_config: Dict[str, Any], fitness_config: Dict[str, Any]) -> tuple:
     """
     工作進程函數：評估單個個體
-    
-    Args:
-        individual_data: (individual_id, individual_tree) 元組
-        engine_config: 回測引擎配置（包含 data_paths 而非 data）
-        fitness_config: 適應度配置
-        
-    Returns:
-        (individual_id, fitness_value) 元組
     """
+    # 確保 DEAP creator 已初始化
+    setup_deap_creator()
+    
     try:
         individual_id, individual_tree = individual_data
         
@@ -55,8 +61,12 @@ def _evaluate_individual_worker(individual_data: tuple, engine_config: Dict[str,
             backtest_start=engine_config['backtest_start'],
             backtest_end=engine_config['backtest_end'],
             initial_capital=engine_config['initial_capital'],
-            pset=engine_config['pset']
+            pset=None
         )
+        
+        # Import pset inside worker to avoid pickling issues
+        from ..gp import pset
+        engine.pset = pset
         
         # 評估個體 - 使用 get_fitness 方法
         fitness_metric = fitness_config.get('function', 'excess_return')
@@ -89,7 +99,7 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
             cache_enabled: 是否啟用適應度緩存
             **kwargs: 其他參數（如 fitness function 參數），在此忽略
         """
-        self.max_processors = 1  # 強制單進程以避免 DataFrame 序列化問題
+        self.max_processors = max_processors
         self.cache_enabled = cache_enabled
         self.fitness_cache = {}
         self.engine = None  # Will be set by setup_data
@@ -203,6 +213,9 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
         
         logger.info(f"開始評估 {len(individuals_to_evaluate)}/{len(population)} 個個體")
         
+        # DEBUG PRINT
+        print(f"DEBUG: max_processors={self.max_processors}, individuals={len(individuals_to_evaluate)}")
+        
         if len(individuals_to_evaluate) == 1 or self.max_processors == 1:
             # 單進程評估
             self._evaluate_sequential(individuals_to_evaluate, data)
@@ -281,7 +294,8 @@ class PortfolioFitnessEvaluator(FitnessEvaluator):
                 'backtest_start': self.engine.config['data']['train_backtest_start'],
                 'backtest_end': self.engine.config['data']['train_backtest_end'],
                 'initial_capital': 100000.0,
-                'pset': pset
+                'initial_capital': 100000.0,
+                # 'pset': pset  # Removed to avoid pickling issues
             }
             
             fitness_config = {

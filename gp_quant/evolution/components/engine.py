@@ -153,6 +153,12 @@ class EvolutionEngine:
             # 2. 初始化
             self.is_running = True
             self.should_stop = False
+            
+            # 初始化評估器數據 (如果支持)
+            if hasattr(self.evaluator, 'set_data'):
+                logger.info("🔧 初始化評估器數據...")
+                self.evaluator.set_data(data)
+                
             self._fire_event('evolution_start', engine=self, data=data)
             
             # 3. 創建初始族群
@@ -231,7 +237,13 @@ class EvolutionEngine:
             raise
     
     def _update_best_individual(self):
-        """更新最佳個體"""
+        """
+        更新最佳個體
+        
+        對於 TVT (Train-Validate-Test) 評估器:
+        - 優先使用 validate_fitness 選擇最佳個體
+        - 若無 validate_fitness，則使用 train fitness (fitness.values[0])
+        """
         if not self.population:
             return
         
@@ -241,11 +253,27 @@ class EvolutionEngine:
         if not valid_individuals:
             return
         
-        current_best = max(valid_individuals, key=lambda ind: ind.fitness.values[0])
+        def get_comparison_fitness(ind):
+            """獲取用於比較的適應度值 - 優先使用 validate_fitness"""
+            if hasattr(ind, 'get_metadata'):
+                validate_fitness = ind.get_metadata('validate_fitness')
+                if validate_fitness is not None:
+                    return validate_fitness
+            # 回退到 train fitness
+            return ind.fitness.values[0]
         
-        if self.best_individual is None or current_best.fitness.values[0] > self.best_individual.fitness.values[0]:
+        current_best = max(valid_individuals, key=get_comparison_fitness)
+        current_best_fitness = get_comparison_fitness(current_best)
+        
+        # 判斷是否更新 best_individual
+        if self.best_individual is None:
             self.best_individual = current_best
-            logger.debug(f"在 generation {self.current_generation} 發現新的最佳個體: fitness={current_best.fitness.values[0]:.6f}")
+            logger.debug(f"在 generation {self.current_generation} 設定初始最佳個體: fitness={current_best_fitness:.6f}")
+        else:
+            best_fitness = get_comparison_fitness(self.best_individual)
+            if current_best_fitness > best_fitness:
+                self.best_individual = current_best
+                logger.debug(f"在 generation {self.current_generation} 發現新的最佳個體: fitness={current_best_fitness:.6f}")
     
     def _record_generation_stats(self):
         """記錄世代統計信息"""

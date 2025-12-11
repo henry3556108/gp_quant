@@ -125,7 +125,7 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
     
     def _calculate_ted_distance_matrix(self, population: List) -> np.ndarray:
         """
-        計算標準化 TED distance matrix（平行化，帶進度條）
+        計算標準化 TED distance matrix（使用 ParallelSimilarityMatrix 真正並行化）
         
         Args:
             population: 族群列表
@@ -133,50 +133,31 @@ class TEDNicheSelectionStrategy(SelectionStrategy):
         Returns:
             Normalized TED distance matrix (n x n)
         """
+        from gp_quant.similarity.parallel_calculator import ParallelSimilarityMatrix
+        
         n = len(population)
-        logger.info(f"計算 TED Distance Matrix ({n} x {n})...")
+        total_pairs = n * (n - 1) // 2
+        logger.info(f"計算 TED Distance Matrix ({n} x {n}, {total_pairs} pairs)，使用 {self.n_jobs} workers...")
         
-        # 初始化矩陣
-        ted_matrix = np.zeros((n, n))
+        # 使用 ParallelSimilarityMatrix（真正的 multiprocessing）
+        calculator = ParallelSimilarityMatrix(
+            population=population,
+            n_workers=self.n_jobs
+        )
+        calculator.compute(show_progress=True)
         
-        # 生成所有需要計算的配對（上三角）
-        pairs = [(i, j, population[i], population[j]) 
-                 for i in range(n) for j in range(i + 1, n)]
+        # 取得 raw distance matrix
+        ted_matrix = calculator.distance_matrix.copy()
         
-        total_pairs = len(pairs)
-        logger.info(f"平行計算 {total_pairs} 對 TED (n_jobs={self.n_jobs})...")
-        
-        # 使用分批處理來實現實時進度更新
-        # 批次大小根據 worker 數量調整
-        batch_size = max(100, total_pairs // (self.n_jobs * 10))
-        
-        results = []
-        with tqdm(total=total_pairs, desc="計算 TED", ncols=100, 
-                  unit="pairs", position=0, leave=True) as pbar:
-            
-            # 分批處理
-            for batch_start in range(0, total_pairs, batch_size):
-                batch_end = min(batch_start + batch_size, total_pairs)
-                batch_pairs = pairs[batch_start:batch_end]
-                
-                # 平行計算當前批次（使用 threading backend 避免 DEAP creator 序列化問題）
-                batch_results = Parallel(n_jobs=self.n_jobs, backend='threading', verbose=0)(
-                    delayed(self._calculate_ted_for_pair)(i, j, ind_i, ind_j)
-                    for i, j, ind_i, ind_j in batch_pairs
-                )
-                
-                results.extend(batch_results)
-                
-                # 更新進度條
-                pbar.update(len(batch_results))
-        
-        # 填充矩陣（對稱）
-        for i, j, ted in results:
-            ted_matrix[i, j] = ted
-            ted_matrix[j, i] = ted
-        
-        # 對角線為 0
-        np.fill_diagonal(ted_matrix, 0.0)
+        # 正規化：每對除以 max(len(tree_i), len(tree_j))
+        sizes = np.array([len(ind) for ind in population], dtype=float)
+        for i in range(n):
+            for j in range(i + 1, n):
+                max_size = max(sizes[i], sizes[j])
+                if max_size > 0:
+                    norm_ted = ted_matrix[i, j] / max_size
+                    ted_matrix[i, j] = norm_ted
+                    ted_matrix[j, i] = norm_ted
         
         # 統計信息
         upper_tri = np.triu_indices(n, k=1)
@@ -1064,6 +1045,474 @@ class PnLNicheSelectionStrategy(SelectionStrategy):
             'top_m_per_cluster': self.M,
             'cross_group_ratio': self.cross_group_ratio,
             'correlation_method': self.correlation_method,
+            'tournament_size': self.tournament_size,
+            'cached_generation': self._cached_generation,
+            'elite_pool_size': len(self._cached_elite_pool) if self._cached_elite_pool else 0
+        }
+
+
+class SignalNicheSelectionStrategy(SelectionStrategy):
+    """
+    Signal Overlap-based Niche Selection Strategy
+    
+    Uses signal overlap (percentage of matching trading decisions) as the
+    distance metric for clustering strategies into niches. This approach
+    doesn't require pnl_curve metadata, making it compatible with all evaluators.
+    
+    Workflow:
+    1. Compute trading signals for all individuals using entire training data
+    2. Calculate Signal Overlap Matrix (pairwise overlap ratios)
+    3. Convert overlap to distance: distance = 1 - overlap
+    4. Use hierarchical clustering (Complete Linkage) to form niches
+    5. Auto-search optimal K (or use fixed K)
+    6. Extract Top M individuals from each cluster -> Elite Pool
+    7. Select parents from Elite Pool (cross-niche / within-niche)
+    
+    Note: Signal computation uses the FULL training period, independent of
+          the fitness evaluator's segment/window strategy.
+    """
+    
+    def __init__(self, 
+                 max_k: int = 5,
+                 fixed_k: int = None,
+                 top_m_per_cluster: int = 50,
+                 cross_group_ratio: float = 0.3,
+                 tournament_size: int = 3,
+                 max_rank_fitness: float = 1.8,
+                 min_rank_fitness: float = 0.2,
+                 n_jobs: int = 6):
+        """
+        Initialize Signal Niche Selection Strategy
+        
+        Args:
+            max_k: Maximum number of clusters (searches K=2 to max_k)
+            fixed_k: Fixed K value (if set, skips auto-search)
+            top_m_per_cluster: Number of individuals to keep per cluster (M)
+            cross_group_ratio: Ratio of cross-niche pairings (0.0-1.0)
+            tournament_size: Tournament selection size
+            max_rank_fitness: Max rank fitness for Ranked SUS
+            min_rank_fitness: Min rank fitness for Ranked SUS
+            n_jobs: Number of parallel workers (for future optimization)
+        """
+        super().__init__()
+        self.name = "signal_niche"
+        self.max_k = max_k
+        self.fixed_k = fixed_k
+        self.M = top_m_per_cluster
+        self.cross_group_ratio = cross_group_ratio
+        self.tournament_size = tournament_size
+        self.max_rank_fitness = max_rank_fitness
+        self.min_rank_fitness = min_rank_fitness
+        self.n_jobs = n_jobs
+        
+        # Cache (computed once per generation)
+        self._cached_generation = -1
+        self._cached_clusters = None
+        self._cached_elite_pool = None
+        self._optimal_k = None
+        self._backtest_engine = None  # Lazy initialization
+        
+        if self.fixed_k is not None:
+            logger.info(f"初始化 Signal Niche Selection: fixed_k={self.fixed_k}, M={self.M}, "
+                       f"cross_group_ratio={self.cross_group_ratio}, "
+                       f"tournament_size={self.tournament_size}")
+        else:
+            logger.info(f"初始化 Signal Niche Selection: max_k={self.max_k} (Silhouette + 一階導數法), M={self.M}, "
+                       f"cross_group_ratio={self.cross_group_ratio}, "
+                       f"tournament_size={self.tournament_size}")
+    
+    def _get_backtest_engine(self, data: Dict[str, Any]):
+        """
+        Get or create a PortfolioBacktestingEngine for signal computation.
+        Uses engine config to match training data period.
+        """
+        if self._backtest_engine is None:
+            from gp_quant.backtesting import PortfolioBacktestingEngine
+            
+            config = self.engine.config
+            train_data = data.get('train_data')
+            
+            if train_data is None:
+                raise ValueError("data 中沒有 'train_data'。Signal Niche 需要完整的 training data。")
+            
+            # Process train_data: extract DataFrame from dict structure
+            # train_data structure: {ticker: {'data': DataFrame}} or {ticker: DataFrame}
+            processed_data = {}
+            for ticker, ticker_data in train_data.items():
+                if isinstance(ticker_data, dict) and 'data' in ticker_data:
+                    processed_data[ticker] = ticker_data['data']
+                else:
+                    processed_data[ticker] = ticker_data
+            
+            self._backtest_engine = PortfolioBacktestingEngine(
+                data=processed_data,
+                backtest_start=config['data']['train_backtest_start'],
+                backtest_end=config['data']['train_backtest_end'],
+                initial_capital=100000.0
+            )
+            # DEBUG: Log engine creation
+            print(f"[DEBUG] SignalNiche: Created PortfolioBacktestingEngine "
+                  f"(period: {config['data']['train_backtest_start']} ~ {config['data']['train_backtest_end']}, "
+                  f"tickers: {list(processed_data.keys())})")
+        
+        return self._backtest_engine
+    
+    def _compute_signals_for_population(self, population: List, data: Dict[str, Any]) -> List[np.ndarray]:
+        """
+        Compute trading signals for all individuals.
+        
+        Args:
+            population: List of individuals
+            data: Evolution data (must contain 'train_data')
+            
+        Returns:
+            List of signal arrays, one per individual
+        """
+        engine = self._get_backtest_engine(data)
+        n = len(population)
+        
+        # DEBUG: Log signal computation start
+        print(f"[DEBUG] SignalNiche: Computing signals for {n} individuals...")
+        
+        signals = []
+        for i, ind in enumerate(tqdm(population, desc="計算 Signals", ncols=100)):
+            try:
+                sig = engine.get_signals(ind)
+                signals.append(sig)
+            except Exception as e:
+                logger.warning(f"Signal 計算失敗 (個體 {i}): {e}，使用空信號")
+                # Return zero signals on failure
+                sample_sig = engine.get_signals(population[0]) if len(signals) == 0 else signals[0]
+                signals.append(np.zeros_like(sample_sig))
+        
+        # DEBUG: Log signal computation complete
+        print(f"[DEBUG] SignalNiche: Signal computation complete. Shape: {signals[0].shape if signals else 'N/A'}")
+        
+        return signals
+    
+    @staticmethod
+    def _signal_overlap(signal_a: np.ndarray, signal_b: np.ndarray) -> float:
+        """
+        Compute overlap ratio between two signal arrays.
+        
+        Returns:
+            Overlap ratio in [0, 1] where 1 = identical signals
+        """
+        if len(signal_a) != len(signal_b):
+            raise ValueError(f"Signal length mismatch: {len(signal_a)} vs {len(signal_b)}")
+        
+        same = np.sum(signal_a == signal_b)
+        return same / len(signal_a)
+    
+    def _calculate_signal_overlap_matrix(self, population: List, data: Dict[str, Any]) -> np.ndarray:
+        """
+        Calculate Signal Overlap Matrix and convert to Distance Matrix.
+        
+        Args:
+            population: List of individuals
+            data: Evolution data
+            
+        Returns:
+            Distance matrix (n x n) where distance = 1 - overlap
+        """
+        n = len(population)
+        logger.info(f"📊 計算 Signal Overlap Matrix ({n} x {n})...")
+        
+        # DEBUG: Print to console for visibility
+        print(f"[DEBUG] SignalNiche: Calculating Signal Overlap Matrix ({n} x {n})...")
+        
+        # Step 1: Compute signals for all individuals
+        signals = self._compute_signals_for_population(population, data)
+        
+        # Step 2: Calculate pairwise overlap
+        overlap_matrix = np.zeros((n, n))
+        
+        total_pairs = n * (n - 1) // 2
+        with tqdm(total=total_pairs, desc="計算 Overlap", ncols=100) as pbar:
+            for i in range(n):
+                overlap_matrix[i, i] = 1.0  # Self-overlap = 1
+                for j in range(i + 1, n):
+                    overlap = self._signal_overlap(signals[i], signals[j])
+                    overlap_matrix[i, j] = overlap
+                    overlap_matrix[j, i] = overlap
+                    pbar.update(1)
+        
+        # Convert overlap to distance: high overlap -> low distance
+        distance_matrix = 1.0 - overlap_matrix
+        
+        # Ensure diagonal is 0
+        np.fill_diagonal(distance_matrix, 0.0)
+        
+        # Stats
+        upper_tri = np.triu_indices(n, k=1)
+        mean_dist = np.mean(distance_matrix[upper_tri])
+        std_dist = np.std(distance_matrix[upper_tri])
+        mean_overlap = np.mean(overlap_matrix[upper_tri])
+        
+        logger.info(f"Signal Overlap 統計: 平均重疊={mean_overlap:.4f}, "
+                   f"平均距離={mean_dist:.4f} ± {std_dist:.4f}")
+        
+        # DEBUG: Print stats
+        print(f"[DEBUG] SignalNiche: Mean overlap={mean_overlap:.4f}, Mean distance={mean_dist:.4f}")
+        
+        return distance_matrix
+    
+    def _find_optimal_k_and_cluster(self, distance_matrix: np.ndarray, population: List) -> Tuple[int, np.ndarray]:
+        """
+        Auto-search best K and cluster (or use fixed K).
+        Same logic as TEDNicheSelectionStrategy.
+        """
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import squareform
+        
+        # Build hierarchical clustering tree
+        condensed_dist = squareform(distance_matrix, checks=False)
+        linkage_matrix = linkage(condensed_dist, method='complete')
+        
+        if self.fixed_k is not None:
+            logger.info(f"使用固定 K={self.fixed_k}")
+            cluster_labels = fcluster(linkage_matrix, self.fixed_k, criterion='maxclust') - 1
+            unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+            
+            cv = np.std(counts) / np.mean(counts) if np.mean(counts) > 0 else 0.0
+            logger.info(f"✅ 固定 K={self.fixed_k}, CV={cv:.4f}")
+            print(f"[DEBUG] SignalNiche: Fixed K={self.fixed_k}, Clusters: {dict(zip(unique_labels, counts))}")
+            
+            return self.fixed_k, cluster_labels
+        
+        # Auto-search using Silhouette Score
+        from sklearn.metrics import silhouette_score
+        
+        logger.info(f"自動搜索最佳 K (K=2~{self.max_k})...")
+        
+        k_values = []
+        silhouette_scores = []
+        cluster_labels_dict = {}
+        
+        for k in range(2, self.max_k + 1):
+            cluster_labels = fcluster(linkage_matrix, k, criterion='maxclust') - 1
+            cluster_labels_dict[k] = cluster_labels
+            
+            try:
+                silhouette_avg = silhouette_score(distance_matrix, cluster_labels, metric='precomputed')
+                k_values.append(k)
+                silhouette_scores.append(silhouette_avg)
+                logger.debug(f"  K={k}: Silhouette={silhouette_avg:.4f}")
+            except Exception as e:
+                logger.warning(f"  K={k}: Silhouette 計算失敗 ({e})")
+        
+        # Find knee point using second derivative
+        if len(silhouette_scores) < 3:
+            best_k = k_values[-1] if k_values else 2
+            best_silhouette = silhouette_scores[-1] if silhouette_scores else 0.0
+        else:
+            second_derivatives = np.diff(silhouette_scores, n=2)
+            knee_idx = np.argmax(np.abs(second_derivatives))
+            best_k = k_values[knee_idx + 2]
+            best_silhouette = silhouette_scores[knee_idx + 2]
+        
+        logger.info(f"✅ 最佳 K={best_k}, Silhouette={best_silhouette:.4f}")
+        print(f"[DEBUG] SignalNiche: Best K={best_k}, Silhouette={best_silhouette:.4f}")
+        
+        cluster_labels = cluster_labels_dict.get(best_k)
+        if cluster_labels is None:
+            cluster_labels = fcluster(linkage_matrix, best_k, criterion='maxclust') - 1
+        
+        unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+        print(f"[DEBUG] SignalNiche: Cluster distribution: {dict(zip(unique_labels, counts))}")
+        
+        return best_k, cluster_labels
+    
+    def _extract_elite_pool(self, population: List, cluster_labels: np.ndarray) -> Tuple[List[List], List]:
+        """
+        Extract Top M individuals from each cluster to form Elite Pool.
+        Same logic as TEDNicheSelectionStrategy.
+        """
+        logger.info(f"提取 Elite Pool (每個 cluster Top {self.M})...")
+        
+        clusters = []
+        elite_pool = []
+        
+        unique_labels = np.unique(cluster_labels)
+        n_clusters = len(unique_labels)
+        
+        for cluster_id in unique_labels:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_indices = np.where(cluster_mask)[0]
+            cluster_individuals = [population[i] for i in cluster_indices]
+            
+            if not cluster_individuals:
+                clusters.append([])
+                continue
+            
+            # Sort by fitness (descending)
+            cluster_sorted = sorted(cluster_individuals, 
+                                   key=lambda x: x.fitness.values[0], 
+                                   reverse=True)
+            
+            top_m = cluster_sorted[:min(self.M, len(cluster_sorted))]
+            
+            clusters.append(top_m)
+            elite_pool.extend(top_m)
+            
+            logger.debug(f"  Cluster {cluster_id}: {len(cluster_individuals)} 個體 → Top {len(top_m)}")
+        
+        logger.info(f"Elite Pool 大小: {len(elite_pool)} 個體 (目標: {n_clusters * self.M})")
+        print(f"[DEBUG] SignalNiche: Elite Pool size={len(elite_pool)}")
+        
+        return clusters, elite_pool
+    
+    def _get_or_compute_niching(self, population: List, data: Dict[str, Any]) -> Tuple[List[List], List]:
+        """
+        Get or compute niche clustering (with cache).
+        """
+        current_gen = data.get('generation', -1)
+        
+        # Use cache if same generation
+        if current_gen == self._cached_generation and self._cached_clusters is not None:
+            logger.debug(f"使用快取的生態位分群 (generation {current_gen})")
+            return self._cached_clusters, self._cached_elite_pool
+        
+        logger.info(f"計算新的生態位分群 (generation {current_gen})...")
+        print(f"[DEBUG] SignalNiche: Computing niching for generation {current_gen}")
+        
+        # 1. Calculate Signal Overlap Matrix
+        distance_matrix = self._calculate_signal_overlap_matrix(population, data)
+        
+        # 2. Auto-search optimal K and cluster
+        optimal_k, cluster_labels = self._find_optimal_k_and_cluster(distance_matrix, population)
+        self._optimal_k = optimal_k
+        
+        # 3. Extract Elite Pool
+        clusters, elite_pool = self._extract_elite_pool(population, cluster_labels)
+        
+        # Update cache
+        self._cached_generation = current_gen
+        self._cached_clusters = clusters
+        self._cached_elite_pool = elite_pool
+        
+        logger.info(f"生態位分群完成並快取 (generation {current_gen}, K={optimal_k})")
+        
+        return clusters, elite_pool
+    
+    def select_pairs(self, population: List, k: int, data: Dict[str, Any]) -> List[Tuple]:
+        """
+        Select k parent pairs for crossover.
+        Same logic as TEDNicheSelectionStrategy.
+        """
+        if k <= 0:
+            return []
+        
+        clusters, elite_pool = self._get_or_compute_niching(population, data)
+        non_empty_clusters = [c for c in clusters if len(c) > 0]
+        
+        if len(non_empty_clusters) == 0:
+            logger.error("所有 clusters 都為空！回退到標準 tournament selection")
+            return self._fallback_select_pairs(population, k)
+        
+        pairs = []
+        
+        for _ in range(k):
+            try:
+                if random.random() < self.cross_group_ratio and len(non_empty_clusters) >= 2:
+                    # Cross-niche pairing
+                    cluster_i, cluster_j = random.sample(range(len(non_empty_clusters)), 2)
+                    
+                    parent1 = tools.selTournament(non_empty_clusters[cluster_i], 1, 
+                                                 tournsize=self.tournament_size)[0]
+                    parent2 = tools.selTournament(non_empty_clusters[cluster_j], 1, 
+                                                 tournsize=self.tournament_size)[0]
+                else:
+                    # Within-niche pairing
+                    cluster_i = random.choice(range(len(non_empty_clusters)))
+                    cluster = non_empty_clusters[cluster_i]
+                    
+                    if len(cluster) >= 2:
+                        parents = tools.selTournament(cluster, 2, tournsize=self.tournament_size)
+                        parent1, parent2 = parents[0], parents[1]
+                    else:
+                        if len(non_empty_clusters) >= 2:
+                            cluster_j = random.choice([c for c in range(len(non_empty_clusters)) if c != cluster_i])
+                            parent1 = cluster[0]
+                            parent2 = tools.selTournament(non_empty_clusters[cluster_j], 1,
+                                                         tournsize=self.tournament_size)[0]
+                        else:
+                            parent1 = parent2 = cluster[0]
+                
+                pairs.append((parent1, parent2))
+                
+            except Exception as e:
+                logger.error(f"選擇 parent pair 失敗: {e}")
+                if len(elite_pool) >= 2:
+                    parent1, parent2 = random.sample(elite_pool, 2)
+                    pairs.append((parent1, parent2))
+        
+        logger.debug(f"選擇了 {len(pairs)} 對 parents (目標: {k})")
+        
+        return pairs
+    
+    def select_individuals(self, population: List, k: int, data: Dict[str, Any]) -> List:
+        """
+        Select k individuals for mutation.
+        Uses Ranked SUS from Elite Pool.
+        """
+        if k <= 0:
+            return []
+        
+        clusters, elite_pool = self._get_or_compute_niching(population, data)
+        
+        if not elite_pool:
+            logger.error("Elite Pool 為空！回退到標準 tournament selection")
+            return tools.selTournament(population, k, tournsize=self.tournament_size)
+        
+        # Ranked SUS selection
+        sorted_elite = sorted(elite_pool, key=lambda x: x.fitness.values[0], reverse=True)
+        pop_size = len(sorted_elite)
+        
+        original_fitnesses = []
+        for i, ind in enumerate(sorted_elite):
+            rank = i + 1
+            original_fitnesses.append(ind.fitness.values)
+            
+            if pop_size > 1:
+                rank_fitness = self.max_rank_fitness - (
+                    (self.max_rank_fitness - self.min_rank_fitness) * (rank - 1) / (pop_size - 1)
+                )
+            else:
+                rank_fitness = self.max_rank_fitness
+            
+            ind.fitness.values = (rank_fitness,)
+        
+        try:
+            chosen = tools.selStochasticUniversalSampling(sorted_elite, k)
+        except Exception as e:
+            logger.warning(f"SUS 選擇失敗: {e}")
+            chosen = tools.selTournament(sorted_elite, k, tournsize=self.tournament_size)
+        
+        # Restore original fitness
+        for ind, original_fitness in zip(sorted_elite, original_fitnesses):
+            ind.fitness.values = original_fitness
+        
+        return chosen
+    
+    def _fallback_select_pairs(self, population: List, k: int) -> List[Tuple]:
+        """Fallback: standard tournament selection"""
+        logger.warning("使用回退方案選擇 parent pairs")
+        selected = tools.selTournament(population, k * 2, tournsize=self.tournament_size)
+        pairs = []
+        for i in range(0, len(selected), 2):
+            if i + 1 < len(selected):
+                pairs.append((selected[i], selected[i + 1]))
+        return pairs
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get strategy statistics"""
+        return {
+            'name': self.name,
+            'max_k': self.max_k,
+            'optimal_k': self._optimal_k,
+            'top_m_per_cluster': self.M,
+            'cross_group_ratio': self.cross_group_ratio,
             'tournament_size': self.tournament_size,
             'cached_generation': self._cached_generation,
             'elite_pool_size': len(self._cached_elite_pool) if self._cached_elite_pool else 0

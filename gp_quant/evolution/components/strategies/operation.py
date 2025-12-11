@@ -82,6 +82,9 @@ class ParallelOperationStrategy(OperationStrategy):
         config = self.engine.config
         population_size = len(population)
         
+        # IMPORTANT: Add current generation to data for niche selection cache invalidation
+        data['generation'] = getattr(self.engine, 'current_generation', 0)
+        
         # 獲取操作機率
         crossover_rate = config['crossover']['rate']
         mutation_rate = config['mutation']['rate'] 
@@ -159,6 +162,9 @@ class SerialOperationStrategy(OperationStrategy):
         config = self.engine.config
         population_size = len(population)
         logger.debug(f"開始串聯操作，族群大小: {population_size}")
+        
+        # IMPORTANT: Add current generation to data for niche selection cache invalidation
+        data['generation'] = getattr(self.engine, 'current_generation', 0)
         
         # 1. 交配操作
         crossover_offspring = []

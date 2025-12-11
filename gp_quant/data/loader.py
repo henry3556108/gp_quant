@@ -66,39 +66,40 @@ def split_train_test_data(
     train_backtest_end: str,
     test_data_start: str,
     test_backtest_start: str,
-    test_backtest_end: str
-) -> Tuple[Dict[str, Dict], Dict[str, Dict]]:
+    test_backtest_end: str,
+    # Optional validate parameters for backward compatibility
+    validate_data_start: str = None,
+    validate_backtest_start: str = None,
+    validate_backtest_end: str = None
+) -> Tuple[Dict[str, Dict], Dict[str, Dict], Dict[str, Dict]]:
     """
-    Splits data into training (in-sample) and testing (out-of-sample) periods
+    Splits data into training (in-sample), validation, and testing (out-of-sample) periods
     with separate initial periods for technical indicator calculation.
     
-    Based on PRD Section 7, each phase has two periods:
-    1. Initial Period: Used only for calculating technical indicators (warm-up period)
-    2. Backtest Period: Used for both technical indicators AND return calculation
-    
-    Example (Short Training Period):
-    - Training Initial Period: 1997-06-25 to 1998-06-22 (250 days) → indicator calculation only
-    - Training Period: 1998-06-22 to 1999-06-25 (256 days) → indicators + returns
-    - Testing Initial Period: 1998-07-07 to 1999-06-28 (250 days) → indicator calculation only
-    - Testing Period: 1999-06-28 to 2000-06-30 (256 days) → indicators + returns
+    Validate parameters are optional for backward compatibility.
+    If not provided, returns None for validate_data.
     
     Args:
         data: Dictionary of ticker -> DataFrame
-        train_data_start: Training initial period start (e.g., '1997-06-25')
-        train_backtest_start: Training backtest period start (e.g., '1998-06-22')
-        train_backtest_end: Training backtest period end (e.g., '1999-06-25')
-        test_data_start: Testing initial period start (e.g., '1998-07-07')
-        test_backtest_start: Testing backtest period start (e.g., '1999-06-28')
-        test_backtest_end: Testing backtest period end (e.g., '2000-06-30')
+        train_data_start: Training initial period start
+        train_backtest_start: Training backtest period start
+        train_backtest_end: Training backtest period end
+        test_data_start: Testing initial period start
+        test_backtest_start: Testing backtest period start
+        test_backtest_end: Testing backtest period end
+        validate_data_start: (Optional) Validation initial period start
+        validate_backtest_start: (Optional) Validation backtest period start
+        validate_backtest_end: (Optional) Validation backtest period end
     
     Returns:
-        Tuple of (train_data, test_data) dictionaries where each value is a dict with:
-        - 'data': DataFrame with full data (including initial period)
-        - 'backtest_start': Start date for return calculation
-        - 'backtest_end': End date for return calculation
+        Tuple of (train_data, test_data, validate_data) dictionaries.
+        validate_data is None if validate parameters are not provided.
     """
     train_data = {}
     test_data = {}
+    validate_data = {} if validate_data_start else None
+    
+    has_validate = all([validate_data_start, validate_backtest_start, validate_backtest_end])
     
     for ticker, df in data.items():
         # Check if data covers the required periods
@@ -106,7 +107,6 @@ def split_train_test_data(
         data_end_date = df.index[-1]
         
         # Training data: from data_start to backtest_end (includes initial period)
-        # Use the later of train_data_start or actual data start
         actual_train_start = max(pd.Timestamp(train_data_start), data_start_date)
         train_df = df.loc[actual_train_start:train_backtest_end].copy()
         
@@ -126,6 +126,17 @@ def split_train_test_data(
             'backtest_end': test_backtest_end
         }
         
+        # Validation data (optional)
+        if has_validate:
+            actual_validate_start = max(pd.Timestamp(validate_data_start), data_start_date)
+            validate_df = df.loc[actual_validate_start:validate_backtest_end].copy()
+            
+            validate_data[ticker] = {
+                'data': validate_df,
+                'backtest_start': validate_backtest_start,
+                'backtest_end': validate_backtest_end
+            }
+        
         # Calculate period lengths
         train_initial_days = len(df.loc[actual_train_start:train_backtest_start]) - 1
         train_backtest_days = len(df.loc[train_backtest_start:train_backtest_end])
@@ -136,8 +147,17 @@ def split_train_test_data(
         print(f"  Data available from: {data_start_date.date()}")
         print(f"  Initial period: {train_initial_days} days ({actual_train_start.date()} to {train_backtest_start})")
         print(f"  Backtest period: {train_backtest_days} days ({train_backtest_start} to {train_backtest_end})")
+        
+        if has_validate:
+            validate_initial_days = len(df.loc[actual_validate_start:validate_backtest_start]) - 1
+            validate_backtest_days = len(df.loc[validate_backtest_start:validate_backtest_end])
+            print(f"{ticker} - Validate: {len(validate_df)} days total")
+            print(f"  Initial period: {validate_initial_days} days ({actual_validate_start.date()} to {validate_backtest_start})")
+            print(f"  Backtest period: {validate_backtest_days} days ({validate_backtest_start} to {validate_backtest_end})")
+        
         print(f"{ticker} - Test: {len(test_df)} days total")
         print(f"  Initial period: {test_initial_days} days ({actual_test_start.date()} to {test_backtest_start})")
         print(f"  Backtest period: {test_backtest_days} days ({test_backtest_start} to {test_backtest_end})")
     
-    return train_data, test_data
+    return train_data, test_data, validate_data
+

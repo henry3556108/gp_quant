@@ -98,7 +98,12 @@ class CrossoverStrategy(EvolutionStrategy):
     def _clone_individual(self, individual):
         """複製個體"""
         import copy
-        return copy.deepcopy(individual)
+        import uuid
+        cloned = copy.deepcopy(individual)
+        # 為克隆個體分配新的 ID，避免緩存衝突
+        if hasattr(cloned, 'id'):
+            cloned.id = str(uuid.uuid4())
+        return cloned
     
     def _check_depth_constraint(self, individual) -> bool:
         """檢查深度約束"""

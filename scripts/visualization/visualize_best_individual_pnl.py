@@ -442,7 +442,7 @@ def main():
     print(f"   發現 {len(tickers)} 個 ticker: {tickers[:5]}...")
     
     data = load_and_process_data(tickers_dir, tickers)
-    train_data, test_data = split_train_test_data(
+    train_data, test_data, _ = split_train_test_data(
         data,
         train_data_start=config['data']['train_data_start'],
         train_backtest_start=config['data']['train_backtest_start'],

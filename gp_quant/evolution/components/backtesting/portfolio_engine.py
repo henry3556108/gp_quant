@@ -145,14 +145,26 @@ class PortfolioBacktestingEngine:
         signals = self._generate_signals_for_all_stocks(individual)
         
         # Run backtest day by day
-        for date in self.common_dates:
+        for i, date in enumerate(self.common_dates):
             # Get current prices
             prices = {ticker: self.backtest_data[ticker].loc[date, 'Close']
                      for ticker in self.tickers}
             
+            # Determine signal date (T-1) for Next Day Execution
+            if i > 0:
+                prev_date = self.common_dates[i-1]
+            else:
+                prev_date = None
+
             # Process signals for each stock
             for ticker in self.tickers:
-                signal = signals[ticker].get(date, 0)
+                # Get signal from PREVIOUS trading day (T-1)
+                # This implements "Signal on Close -> Trade on Next Open/Close"
+                if prev_date:
+                    signal = signals[ticker].get(prev_date, 0)
+                else:
+                    signal = 0 # No signal on first day
+                
                 allocation = self.rebalancer.allocations[ticker]
                 
                 # 買入邏輯：訊號為 1 且目前沒有持股

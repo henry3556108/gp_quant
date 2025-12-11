@@ -121,7 +121,7 @@ def rate_of_change(series: np.ndarray, n: int) -> np.ndarray:
     
     lagged_series = lag(series, n)
     # Use np.divide to handle division by zero safely
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
         roc = np.divide(series - lagged_series, lagged_series) * 100
     # Handle inf/nan but allow large legitimate values
     return np.nan_to_num(roc, nan=0.0, posinf=1e6, neginf=-1e6)

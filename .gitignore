@@ -6,7 +6,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-configs/
 # C extensions
 *.so
 
@@ -207,7 +206,7 @@ logs/
 # ============================================================================
 
 # Ignore all markdown files except specific ones
-# *.md
+*.md
 *.txt
 # *.csv
 
@@ -236,6 +235,7 @@ figures/
 *.jpeg
 *.gif
 *.svg
+*.sh
 
 # 但保留文檔中的圖片
 !docs/**/*.png
@@ -263,8 +263,9 @@ tensorboard/
 
 # Weights & Biases
 wandb/
-archive/*
-
+archive/
+analysis/
+configs/
 # ============================================================================
 # Keep These Files (明確保留)
 # ============================================================================
@@ -306,5 +307,5 @@ archive/*
 #    git clean -fdx  # 刪除所有未追蹤的文件（小心使用！）
 
 scripts/*large_scale_records_*/
-scripts/*
+
 *.DS_Store

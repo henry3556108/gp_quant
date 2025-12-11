@@ -202,10 +202,14 @@ class PortfolioMetrics:
         # Win rate
         win_rate = PortfolioMetrics.calculate_win_rate(returns)
         
+        # Calculate Sterling Ratio
+        sterling = PortfolioMetrics.calculate_sterling_ratio(total_return, max_dd)
+
         return {
             'total_return': total_return,
             'excess_return': excess_return,
             'sharpe_ratio': sharpe,
+            'sterling_ratio': sterling,
             'max_drawdown': max_dd,
             'volatility': vol,
             'calmar_ratio': calmar,
@@ -213,3 +217,46 @@ class PortfolioMetrics:
             'final_value': final_value,
             'pnl': final_value - initial_capital
         }
+
+    @staticmethod
+    def calculate_sterling_ratio(total_return: float, 
+                                max_drawdown: float,
+                                risk_free_rate: float = 0.0) -> float:
+        """
+        Calculate Sterling Ratio (Total Return / |Max Drawdown|).
+        
+        Note: Some definitions use Annualized Return / |Max Drawdown|.
+        Here we use Total Return as per user specification, but it's easily adaptable.
+        If Max Drawdown is 0, returns a large number or 0 depending on return.
+        
+        Args:
+            total_return: Total return over period
+            max_drawdown: Maximum drawdown (negative value)
+            risk_free_rate: Risk free rate (subtracted from return if needed, usually 0 for Sterling)
+            
+        Returns:
+            Sterling ratio
+        """
+        if max_drawdown == 0:
+            return 0.0 if total_return <= 0 else 100.0  # Avoid division by zero
+            
+        return (total_return - risk_free_rate) / abs(max_drawdown)
+
+    @staticmethod
+    def calculate_shrinkage(train_metric: float, test_metric: float) -> float:
+        """
+        Calculate Shrinkage ((Train - Test) / Train).
+        
+        Args:
+            train_metric: Metric value in training period
+            test_metric: Metric value in testing period
+            
+        Returns:
+            Shrinkage percentage (e.g., 0.20 for 20% drop)
+        """
+        if train_metric == 0:
+            return 0.0
+            
+        return (train_metric - test_metric) / train_metric
+
+

@@ -326,3 +326,30 @@ class PortfolioBacktestingEngine:
         equity_curve = result['equity_curve']
         pnl_curve = equity_curve - self.initial_capital
         return pnl_curve
+
+    def get_signals(self, individual: Any) -> np.ndarray:
+        """
+        Get aggregated trading signals for an individual across all stocks.
+        
+        This method is used by SignalNicheSelectionStrategy to calculate
+        signal overlap between individuals.
+        
+        Args:
+            individual: DEAP individual (GP tree)
+            
+        Returns:
+            Flattened signal array (n_dates * n_tickers,) with values {0, 1}
+            where 1 = long position, 0 = flat position
+        """
+        # Generate signals for all stocks
+        signals_dict = self._generate_signals_for_all_stocks(individual)
+        
+        # Aggregate into a single array for overlap calculation
+        # Order: for each date, concatenate signals for all tickers
+        signal_arrays = []
+        for date in self.common_dates:
+            for ticker in self.tickers:
+                signal = signals_dict[ticker].get(date, 0)
+                signal_arrays.append(signal)
+        
+        return np.array(signal_arrays)

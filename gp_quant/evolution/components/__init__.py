@@ -38,7 +38,8 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
             'tournament': 'TournamentStrategy',
             'roulette': 'RouletteStrategy',
             'ted_niche': 'TEDNicheSelectionStrategy',
-            'pnl_niche': 'PnLNicheSelectionStrategy'
+            'pnl_niche': 'PnLNicheSelectionStrategy',
+            'signal_niche': 'SignalNicheSelectionStrategy'
         },
         'crossover': {
             'one_point_leaf_biased': 'CrossoverStrategy',
@@ -83,7 +84,7 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
             from .strategies import initialization as strategy_module
         elif strategy_type == 'selection':
             # 特殊處理：Niche Selection 策略在 niche_selection 模組中
-            if strategy_name in ['ted_niche', 'pnl_niche']:
+            if strategy_name in ['ted_niche', 'pnl_niche', 'signal_niche']:
                 from .strategies import niche_selection as strategy_module
             else:
                 from .strategies import selection as strategy_module
@@ -121,6 +122,13 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
     except Exception as e:
         raise Exception(f"創建策略 {strategy_type}.{strategy_name} 時出錯: {e}")
 
+from .evaluators.base import FitnessEvaluator
+from .evaluators.portfolio_evaluator import PortfolioFitnessEvaluator
+from .evaluators.rsfgp_evaluator import RSFGPPortfolioEvaluator
+
+from .handlers.base import EventHandler
+from .handlers.save_handler import SaveHandler
+
 def _create_evaluator(evaluator_type: str, evaluators_module, config: dict):
     """
     根據配置動態創建適應度評估器
@@ -135,7 +143,10 @@ def _create_evaluator(evaluator_type: str, evaluators_module, config: dict):
     """
     evaluator_mappings = {
         'portfolio_backtest': 'PortfolioFitnessEvaluator',
-        'single_backtest': 'SingleFitnessEvaluator'
+        'single_backtest': 'SingleFitnessEvaluator',
+        'rsfgp': 'RSFGPPortfolioEvaluator',
+        'tvt': 'TrainValidateTestEvaluator',
+        'rolling_window': 'RollingWindowFitnessEvaluator'
     }
     
     if evaluator_type not in evaluator_mappings:
@@ -145,8 +156,15 @@ def _create_evaluator(evaluator_type: str, evaluators_module, config: dict):
     class_name = evaluator_mappings[evaluator_type]
     
     try:
-        # 導入評估器模組
-        from .evaluators import portfolio_evaluator as evaluator_module
+        # 根據評估器類型導入對應模組
+        if evaluator_type == 'rsfgp':
+            from .evaluators import rsfgp_evaluator as evaluator_module
+        elif evaluator_type == 'tvt':
+            from .evaluators import tvt_evaluator as evaluator_module
+        elif evaluator_type == 'rolling_window':
+            from .evaluators import rolling_window_evaluator as evaluator_module
+        else:
+            from .evaluators import portfolio_evaluator as evaluator_module
         
         # 使用映射表獲取類名，然後從模組中獲取類
         if not hasattr(evaluator_module, class_name):
@@ -156,7 +174,11 @@ def _create_evaluator(evaluator_type: str, evaluators_module, config: dict):
         
         # 獲取評估器的配置參數
         fitness_config = config.get('fitness', {})
-        evaluator_params = fitness_config.get('parameters', {})
+        evolution_config = config.get('evolution', {})
+        evaluator_params = fitness_config.get('parameters', {}).copy()
+        
+        # 從 evolution 配置中獲取 max_processors
+        evaluator_params['max_processors'] = evolution_config.get('max_processors', 1)
         
         # 創建評估器實例，傳入配置參數
         return evaluator_class(**evaluator_params)

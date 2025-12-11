@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
+import copy
 
 # 添加項目根目錄到 Python 路徑
 sys.path.insert(0, str(Path(__file__).parent))
@@ -50,7 +51,7 @@ def load_portfolio_data(data_config: Dict[str, Any]) -> Dict[str, Any]:
         data_config: 數據配置
         
     Returns:
-        載入的數據字典，包含 train_data 和 test_data
+        載入的數據字典，包含 train_data, test_data, 和可選的 validate_data
     """
     print(f"📊 載入投資組合數據...")
     
@@ -75,15 +76,26 @@ def load_portfolio_data(data_config: Dict[str, Any]) -> Dict[str, Any]:
     # 載入原始數據
     raw_data = load_and_process_data(str(tickers_dir), tickers)
     
-    # 分割訓練和測試數據
-    train_data, test_data = split_train_test_data(
+    # 檢查是否有 validate 配置（向下兼容）
+    has_validate = all([
+        data_config.get('validate_data_start'),
+        data_config.get('validate_backtest_start'),
+        data_config.get('validate_backtest_end')
+    ])
+    
+    # 分割訓練、驗證和測試數據
+    train_data, test_data, validate_data = split_train_test_data(
         raw_data,
         train_data_start=data_config['train_data_start'],
         train_backtest_start=data_config['train_backtest_start'],
         train_backtest_end=data_config['train_backtest_end'],
         test_data_start=data_config['test_data_start'],
         test_backtest_start=data_config['test_backtest_start'],
-        test_backtest_end=data_config['test_backtest_end']
+        test_backtest_end=data_config['test_backtest_end'],
+        # Optional validate parameters
+        validate_data_start=data_config.get('validate_data_start'),
+        validate_backtest_start=data_config.get('validate_backtest_start'),
+        validate_backtest_end=data_config.get('validate_backtest_end')
     )
     
     data = {
@@ -92,7 +104,13 @@ def load_portfolio_data(data_config: Dict[str, Any]) -> Dict[str, Any]:
         'tickers': tickers
     }
     
-    print(f"✅ 數據載入完成: {len(tickers)} 個股票")
+    # 只有在有 validate 配置時才加入
+    if validate_data:
+        data['validate_data'] = validate_data
+        print(f"✅ 數據載入完成: {len(tickers)} 個股票 (Train + Validate + Test)")
+    else:
+        print(f"✅ 數據載入完成: {len(tickers)} 個股票 (Train + Test)")
+    
     return data
 
 def print_experiment_info(config: Dict[str, Any]):
@@ -184,56 +202,143 @@ def main():
         # 5. 載入數據
         data = load_portfolio_data(config['data'])
         
-        # 6. 創建演化引擎
-        print(f"🏗️ 創建組件化演化引擎...")
-        from gp_quant.evolution.components import create_evolution_engine
+        # 6. 選擇並創建引擎
+        experiment_type = config['experiment'].get('type', 'standard')
         
-        engine = create_evolution_engine(config)
-        print(f"✅ 演化引擎創建完成")
-        
-        # 7. 執行演化
-        print(f"\n🚀 開始演化計算...")
-        start_time = datetime.now()
-        
-        result = engine.evolve(data)
-        
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-        
-        # 設置執行時間
-        result.execution_time = duration
-        
-        # 8. 輸出結果
-        print(f"\n✅ 演化計算完成!")
-        print(f"⏱️  總執行時間: {duration:.2f} 秒 ({duration/60:.2f} 分鐘)")
-        print(f"📈 最終世代: {result.final_generation}")
-        print(f"🏆 最佳適應度: {result.best_fitness:.4f}")
-        print(f"📁 記錄保存於: {config['logging']['records_dir']}")
-        if result.genealogy:
-            print(f"🧬 個體譜系記錄: {len(result.genealogy)} 個個體")
+        if experiment_type == 'walk_forward':
+            print(f"🏗️ 創建 Walk-Forward 演化引擎...")
+            from gp_quant.backtesting.walk_forward import WalkForwardEvolutionEngine
+            engine = WalkForwardEvolutionEngine(config)
+            print(f"✅ Walk-Forward 引擎創建完成")
+            
+            print(f"\n🚀 開始 Walk-Forward 分析...")
+            start_time = datetime.now()
+            
+            # WF engine run returns a dict
+            wf_result = engine.run(data)
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            if wf_result:
+                print(f"\n✅ Walk-Forward 分析完成!")
+                print(f"⏱️  總執行時間: {duration:.2f} 秒 ({duration/60:.2f} 分鐘)")
+                print(f"📈 處理視窗數: {len(wf_result['window_results'])}")
+                print(f"💰 總回報: {wf_result['metrics']['total_return']:.2%}")
+                print(f"📊 Sharpe Ratio: {wf_result['metrics']['sharpe_ratio']:.4f}")
+                print(f"📉 Max Drawdown: {wf_result['metrics']['max_drawdown']:.2%}")
+                
+                # 保存結果
+                result_file = Path(config['logging']['records_dir']) / 'final_result.json'
+                
+                # Convert Series to list/dict for JSON serialization
+                # We need to be careful with serialization
+                serializable_result = copy.deepcopy(wf_result)
+                # Convert equity curve to list of [date, value] or just values
+                # Actually, let's just save metrics and window summary for now
+                # The equity curve is a Series with DatetimeIndex
+                
+                # Simple serialization helper
+                def convert_for_json(obj):
+                    if isinstance(obj, pd.Series):
+                        return obj.to_dict() # Index (Timestamp) to value
+                    if isinstance(obj, pd.Timestamp):
+                        return obj.isoformat()
+                    return str(obj)
+
+                # Save full result with custom encoder logic or just simplified
+                # Let's save a simplified version
+                final_output = {
+                    'metrics': wf_result['metrics'],
+                    'window_results': []
+                }
+                
+                for wr in wf_result['window_results']:
+                    win_res = {
+                        'window_index': wr['window_index'],
+                        'train_period': f"{wr['window']['train_start'].date()} to {wr['window']['train_end'].date()}",
+                        'test_period': f"{wr['window']['test_start'].date()} to {wr['window']['test_end'].date()}",
+                        'best_fitness': wr['best_fitness'],
+                        'oos_metrics': wr['oos_metrics']
+                    }
+                    final_output['window_results'].append(win_res)
+
+                with open(result_file, 'w', encoding='utf-8') as f:
+                    json.dump(final_output, f, indent=2, ensure_ascii=False)
+                
+                print(f"🏆 最終結果保存於: {result_file}")
+                
+                # Also save summary
+                summary = {
+                    'experiment_name': config['experiment']['name'],
+                    'type': 'walk_forward',
+                    'start_time': start_time.isoformat(),
+                    'end_time': end_time.isoformat(),
+                    'duration_seconds': duration,
+                    'metrics': wf_result['metrics'],
+                    'config': config
+                }
+                summary_file = Path(config['logging']['records_dir']) / 'experiment_summary.json'
+                with open(summary_file, 'w', encoding='utf-8') as f:
+                    json.dump(summary, f, indent=2, ensure_ascii=False)
+                print(f"📄 實驗摘要保存於: {summary_file}")
+                
+                return wf_result
+            else:
+                print("❌ Walk-Forward 分析未返回結果")
+                return None
+
         else:
-            print(f"🧬 個體譜系記錄: 未啟用")
-        
-        # 9. 保存最終結果摘要
-        summary = {
-            'experiment_name': config['experiment']['name'],
-            'start_time': start_time.isoformat(),
-            'end_time': end_time.isoformat(),
-            'duration_seconds': duration,
-            'final_generation': result.final_generation,
-            'best_fitness': result.best_fitness,
-            'population_size': config['evolution']['population_size'],
-            'total_individuals_created': len(result.genealogy) if result.genealogy else 0,
-            'config': config
-        }
-        
-        summary_file = Path(config['logging']['records_dir']) / 'experiment_summary.json'
-        with open(summary_file, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
-        
-        print(f"📄 實驗摘要保存於: {summary_file}")
-        
-        return result
+            # Standard Evolution
+            print(f"🏗️ 創建組件化演化引擎...")
+            from gp_quant.evolution.components import create_evolution_engine
+            
+            engine = create_evolution_engine(config)
+            print(f"✅ 演化引擎創建完成")
+            
+            # 7. 執行演化
+            print(f"\n🚀 開始演化計算...")
+            start_time = datetime.now()
+            
+            result = engine.evolve(data)
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            # 設置執行時間
+            result.execution_time = duration
+            
+            # 8. 輸出結果
+            print(f"\n✅ 演化計算完成!")
+            print(f"⏱️  總執行時間: {duration:.2f} 秒 ({duration/60:.2f} 分鐘)")
+            print(f"📈 最終世代: {result.final_generation}")
+            print(f"🏆 最佳適應度: {result.best_fitness:.4f}")
+            print(f"📁 記錄保存於: {config['logging']['records_dir']}")
+            if result.genealogy:
+                print(f"🧬 個體譜系記錄: {len(result.genealogy)} 個個體")
+            else:
+                print(f"🧬 個體譜系記錄: 未啟用")
+            
+            # 9. 保存最終結果摘要
+            summary = {
+                'experiment_name': config['experiment']['name'],
+                'start_time': start_time.isoformat(),
+                'end_time': end_time.isoformat(),
+                'duration_seconds': duration,
+                'final_generation': result.final_generation,
+                'best_fitness': result.best_fitness,
+                'population_size': config['evolution']['population_size'],
+                'total_individuals_created': len(result.genealogy) if result.genealogy else 0,
+                'config': config
+            }
+            
+            summary_file = Path(config['logging']['records_dir']) / 'experiment_summary.json'
+            with open(summary_file, 'w', encoding='utf-8') as f:
+                json.dump(summary, f, indent=2, ensure_ascii=False)
+            
+            print(f"📄 實驗摘要保存於: {summary_file}")
+            
+            return result
         
     except KeyboardInterrupt:
         print(f"\n⚠️ 用戶中斷實驗")
