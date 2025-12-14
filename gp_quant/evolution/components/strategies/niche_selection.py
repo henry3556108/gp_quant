@@ -1517,3 +1517,407 @@ class SignalNicheSelectionStrategy(SelectionStrategy):
             'cached_generation': self._cached_generation,
             'elite_pool_size': len(self._cached_elite_pool) if self._cached_elite_pool else 0
         }
+
+
+class TreeKernelNicheSelectionStrategy(SelectionStrategy):
+    """
+    基於 Tree Kernel 的生態位選擇策略（TED 的高效替代方案）
+    
+    使用 Subtree Kernel 計算樹之間的距離，時間複雜度從 TED 的 O(n²m²) 降至 O(nm)。
+    預期效能提升約 4-5 倍。
+    
+    工作流程：
+    1. 計算 Tree Kernel distance matrix（每個世代一次，快取）
+    2. 使用階層式分群（Complete Linkage）建立聚類樹
+    3. 自動搜索最佳 K 值（K = 2 到 max_k）
+    4. 每個 cluster 保留 Top M 個體（按 fitness）→ Elite Pool
+    5. Crossover & Mutation 從 Elite Pool 選擇
+    """
+    
+    def __init__(self, 
+                 max_k: int = 5,
+                 fixed_k: int = None,
+                 top_m_per_cluster: int = 50,
+                 cross_group_ratio: float = 0.3,
+                 tournament_size: int = 3,
+                 max_rank_fitness: float = 1.8,
+                 min_rank_fitness: float = 0.2,
+                 lambda_decay: float = 0.5,
+                 n_jobs: int = 6):
+        """
+        Initialize Tree Kernel Niche Selection Strategy
+        
+        Args:
+            max_k: Maximum number of clusters (searches K=2 to max_k)
+            fixed_k: Fixed K value (if set, skips auto-search)
+            top_m_per_cluster: Number of individuals per cluster to keep
+            cross_group_ratio: Cross-group mating ratio (0.0-1.0)
+            tournament_size: Tournament selection size
+            max_rank_fitness: Maximum rank fitness for SUS
+            min_rank_fitness: Minimum rank fitness for SUS
+            lambda_decay: Decay factor for Tree Kernel (0 < λ ≤ 1)
+            n_jobs: Number of parallel workers (reserved for future)
+        """
+        super().__init__()
+        self.name = "tree_kernel_niche"
+        self.max_k = max_k
+        self.fixed_k = fixed_k
+        self.M = top_m_per_cluster
+        self.cross_group_ratio = cross_group_ratio
+        self.tournament_size = tournament_size
+        self.max_rank_fitness = max_rank_fitness
+        self.min_rank_fitness = min_rank_fitness
+        self.lambda_decay = lambda_decay
+        self.n_jobs = n_jobs
+        
+        # Cache (computed once per generation)
+        self._cached_generation = -1
+        self._cached_clusters = None
+        self._cached_elite_pool = None
+        self._optimal_k = None
+        
+        if self.fixed_k is not None:
+            logger.info(f"初始化 Tree Kernel Niche Selection: fixed_k={self.fixed_k}, M={self.M}, "
+                       f"lambda_decay={self.lambda_decay}, "
+                       f"cross_group_ratio={self.cross_group_ratio}")
+        else:
+            logger.info(f"初始化 Tree Kernel Niche Selection: max_k={self.max_k}, M={self.M}, "
+                       f"lambda_decay={self.lambda_decay}, "
+                       f"cross_group_ratio={self.cross_group_ratio}")
+    
+    def _calculate_kernel_distance_matrix(self, population: List) -> np.ndarray:
+        """
+        Calculate normalized Tree Kernel distance matrix
+        
+        Args:
+            population: Population list
+            
+        Returns:
+            Normalized distance matrix (n x n)
+        """
+        from gp_quant.similarity.tree_kernel import SubtreeKernel
+        from gp_quant.similarity.tree_edit_distance import deap_to_tree_node
+        
+        n = len(population)
+        total_pairs = n * (n - 1) // 2
+        logger.info(f"計算 Tree Kernel Distance Matrix ({n} x {n}, {total_pairs} pairs)...")
+        
+        # Convert all individuals to TreeNode format
+        tree_nodes = []
+        node_sizes = []
+        for ind in population:
+            try:
+                node = deap_to_tree_node(ind)
+                tree_nodes.append(node)
+                node_sizes.append(SubtreeKernel.count_nodes(node))
+            except Exception as e:
+                logger.warning(f"TreeNode 轉換失敗: {e}")
+                tree_nodes.append(None)
+                node_sizes.append(0)
+        
+        # Log tree size statistics
+        valid_sizes = [s for s in node_sizes if s > 0]
+        if valid_sizes:
+            avg_size = np.mean(valid_sizes)
+            max_size = max(valid_sizes)
+            min_size = min(valid_sizes)
+            logger.info(f"樹大小統計: 平均={avg_size:.1f}, 範圍=[{min_size}, {max_size}] nodes")
+        
+        kernel = SubtreeKernel(lambda_decay=self.lambda_decay)
+        distance_matrix = np.zeros((n, n))
+        
+        # Compute self-kernels first for normalization
+        self_kernels = []
+        for i, node in enumerate(tree_nodes):
+            if node is not None:
+                self_kernels.append(kernel.compute(node, node))
+            else:
+                self_kernels.append(1.0)
+        
+        # Compute pairwise distances with progress bar
+        # Cache is now shared across all compute() calls for better performance
+        from tqdm import tqdm
+        
+        for i in tqdm(range(n), desc="Computing kernel distances"):
+            for j in range(i + 1, n):
+                if tree_nodes[i] is None or tree_nodes[j] is None:
+                    distance_matrix[i, j] = 1.0
+                    distance_matrix[j, i] = 1.0
+                else:
+                    k_ij = kernel.compute(tree_nodes[i], tree_nodes[j])
+                    k_ii = self_kernels[i]
+                    k_jj = self_kernels[j]
+                    
+                    # Normalized distance: d = sqrt(k_ii + k_jj - 2*k_ij)
+                    dist_sq = max(0.0, k_ii + k_jj - 2 * k_ij)
+                    dist = np.sqrt(dist_sq)
+                    
+                    # Normalize to [0, 1] range
+                    max_dist = np.sqrt(k_ii + k_jj)
+                    if max_dist > 0:
+                        norm_dist = dist / max_dist
+                    else:
+                        norm_dist = 0.0
+                    
+                    distance_matrix[i, j] = norm_dist
+                    distance_matrix[j, i] = norm_dist
+        
+        # Clear cache after computation to free memory
+        kernel.clear_cache()
+        
+        # Statistics
+        upper_tri = np.triu_indices(n, k=1)
+        mean_dist = np.mean(distance_matrix[upper_tri])
+        std_dist = np.std(distance_matrix[upper_tri])
+        
+        logger.info(f"Kernel Distance 統計: 平均={mean_dist:.4f} ± {std_dist:.4f}, "
+                   f"範圍=[{np.min(distance_matrix[upper_tri]):.4f}, {np.max(distance_matrix[upper_tri]):.4f}]")
+        
+        return distance_matrix
+    
+    def _find_optimal_k_and_cluster(self, distance_matrix: np.ndarray, population: List) -> Tuple[int, np.ndarray]:
+        """
+        Auto-search optimal K and perform clustering
+        
+        Same algorithm as TEDNicheSelectionStrategy: Silhouette + second derivative method
+        """
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import squareform
+        
+        # Build clustering tree
+        condensed_dist = squareform(distance_matrix, checks=False)
+        linkage_matrix = linkage(condensed_dist, method='complete')
+        
+        # If fixed_k is set, use it directly
+        if self.fixed_k is not None:
+            logger.info(f"使用固定 K={self.fixed_k}")
+            cluster_labels = fcluster(linkage_matrix, self.fixed_k, criterion='maxclust') - 1
+            unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+            
+            cv = np.std(counts) / np.mean(counts) if np.mean(counts) > 0 else 0.0
+            logger.info(f"✅ 固定 K={self.fixed_k}, CV={cv:.4f}")
+            
+            return self.fixed_k, cluster_labels
+        
+        # Auto-search using Silhouette Score
+        from sklearn.metrics import silhouette_score
+        
+        logger.info(f"自動搜索最佳 K (K=2~{self.max_k})...")
+        
+        k_values = []
+        silhouette_scores = []
+        cluster_labels_dict = {}
+        
+        for k in range(2, self.max_k + 1):
+            cluster_labels = fcluster(linkage_matrix, k, criterion='maxclust') - 1
+            cluster_labels_dict[k] = cluster_labels
+            
+            try:
+                silhouette_avg = silhouette_score(distance_matrix, cluster_labels, metric='precomputed')
+                k_values.append(k)
+                silhouette_scores.append(silhouette_avg)
+                logger.debug(f"  K={k}: Silhouette={silhouette_avg:.4f}")
+            except Exception as e:
+                logger.warning(f"  K={k}: Silhouette 計算失敗 ({e})")
+        
+        # Find knee point using second derivative
+        if len(silhouette_scores) < 3:
+            best_k = k_values[-1] if k_values else 2
+        else:
+            second_derivatives = np.diff(silhouette_scores, n=2)
+            knee_idx = np.argmax(np.abs(second_derivatives))
+            best_k = k_values[knee_idx + 2]
+        
+        logger.info(f"✅ 最佳 K={best_k}")
+        
+        cluster_labels = cluster_labels_dict.get(best_k)
+        if cluster_labels is None:
+            cluster_labels = fcluster(linkage_matrix, best_k, criterion='maxclust') - 1
+        
+        return best_k, cluster_labels
+    
+    def _extract_elite_pool(self, population: List, cluster_labels: np.ndarray) -> Tuple[List[List], List]:
+        """Extract Top M individuals from each cluster"""
+        logger.info(f"提取 Elite Pool (每個 cluster Top {self.M})...")
+        
+        clusters = []
+        elite_pool = []
+        
+        unique_labels = np.unique(cluster_labels)
+        n_clusters = len(unique_labels)
+        
+        for cluster_id in unique_labels:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_indices = np.where(cluster_mask)[0]
+            cluster_individuals = [population[i] for i in cluster_indices]
+            
+            if not cluster_individuals:
+                clusters.append([])
+                continue
+            
+            # Sort by fitness (descending)
+            cluster_sorted = sorted(cluster_individuals, 
+                                   key=lambda x: x.fitness.values[0], 
+                                   reverse=True)
+            
+            # Keep Top M
+            top_m = cluster_sorted[:min(self.M, len(cluster_sorted))]
+            
+            clusters.append(top_m)
+            elite_pool.extend(top_m)
+        
+        logger.info(f"Elite Pool 大小: {len(elite_pool)} 個體 (目標: {n_clusters * self.M})")
+        
+        return clusters, elite_pool
+    
+    def _get_or_compute_niching(self, population: List, data: Dict[str, Any]) -> Tuple[List[List], List]:
+        """Get or compute niche clustering (with caching)"""
+        current_gen = data.get('generation', -1)
+        
+        # Return cache if same generation
+        if current_gen == self._cached_generation and self._cached_clusters is not None:
+            logger.debug(f"使用快取的生態位分群 (generation {current_gen}, K={self._optimal_k})")
+            return self._cached_clusters, self._cached_elite_pool
+        
+        # Recompute
+        logger.info(f"計算新的生態位分群 (generation {current_gen})...")
+        
+        # 1. Compute kernel distance matrix
+        distance_matrix = self._calculate_kernel_distance_matrix(population)
+        
+        # 2. Find optimal K and cluster
+        optimal_k, cluster_labels = self._find_optimal_k_and_cluster(distance_matrix, population)
+        self._optimal_k = optimal_k
+        
+        # 3. Extract elite pool
+        clusters, elite_pool = self._extract_elite_pool(population, cluster_labels)
+        
+        # Update cache
+        self._cached_generation = current_gen
+        self._cached_clusters = clusters
+        self._cached_elite_pool = elite_pool
+        
+        logger.info(f"生態位分群完成並快取 (generation {current_gen}, K={optimal_k})")
+        
+        return clusters, elite_pool
+    
+    def select_pairs(self, population: List, k: int, data: Dict[str, Any]) -> List[Tuple]:
+        """Select k parent pairs (for Crossover)"""
+        if k <= 0:
+            return []
+        
+        clusters, elite_pool = self._get_or_compute_niching(population, data)
+        non_empty_clusters = [c for c in clusters if len(c) > 0]
+        
+        if len(non_empty_clusters) == 0:
+            logger.error("所有 clusters 都為空！回退到標準 tournament selection")
+            return self._fallback_select_pairs(population, k)
+        
+        pairs = []
+        
+        for _ in range(k):
+            try:
+                if random.random() < self.cross_group_ratio and len(non_empty_clusters) >= 2:
+                    # Cross-group mating
+                    cluster_i, cluster_j = random.sample(range(len(non_empty_clusters)), 2)
+                    
+                    parent1 = tools.selTournament(non_empty_clusters[cluster_i], 1, 
+                                                 tournsize=self.tournament_size)[0]
+                    parent2 = tools.selTournament(non_empty_clusters[cluster_j], 1, 
+                                                 tournsize=self.tournament_size)[0]
+                else:
+                    # Same-group mating
+                    cluster_i = random.choice(range(len(non_empty_clusters)))
+                    cluster = non_empty_clusters[cluster_i]
+                    
+                    if len(cluster) >= 2:
+                        parents = tools.selTournament(cluster, 2, 
+                                                     tournsize=self.tournament_size)
+                        parent1, parent2 = parents[0], parents[1]
+                    else:
+                        if len(non_empty_clusters) >= 2:
+                            cluster_j = random.choice([c for c in range(len(non_empty_clusters)) if c != cluster_i])
+                            parent1 = cluster[0]
+                            parent2 = tools.selTournament(non_empty_clusters[cluster_j], 1,
+                                                         tournsize=self.tournament_size)[0]
+                        else:
+                            parent1 = parent2 = cluster[0]
+                
+                pairs.append((parent1, parent2))
+                
+            except Exception as e:
+                logger.error(f"選擇 parent pair 失敗: {e}")
+                if len(elite_pool) >= 2:
+                    parent1, parent2 = random.sample(elite_pool, 2)
+                    pairs.append((parent1, parent2))
+        
+        return pairs
+    
+    def select_individuals(self, population: List, k: int, data: Dict[str, Any]) -> List:
+        """Select k individuals (for Mutation)"""
+        if k <= 0:
+            return []
+        
+        clusters, elite_pool = self._get_or_compute_niching(population, data)
+        
+        if not elite_pool:
+            logger.error("Elite Pool 為空！回退到標準 tournament selection")
+            return tools.selTournament(population, k, tournsize=self.tournament_size)
+        
+        # Ranked SUS from elite_pool
+        sorted_elite = sorted(elite_pool, 
+                             key=lambda x: x.fitness.values[0], 
+                             reverse=True)
+        
+        pop_size = len(sorted_elite)
+        
+        original_fitnesses = []
+        for i, ind in enumerate(sorted_elite):
+            rank = i + 1
+            original_fitnesses.append(ind.fitness.values)
+            
+            if pop_size > 1:
+                rank_fitness = self.max_rank_fitness - (
+                    (self.max_rank_fitness - self.min_rank_fitness) * (rank - 1) / (pop_size - 1)
+                )
+            else:
+                rank_fitness = self.max_rank_fitness
+            
+            ind.fitness.values = (rank_fitness,)
+        
+        try:
+            chosen = tools.selStochasticUniversalSampling(sorted_elite, k)
+        except Exception as e:
+            logger.warning(f"SUS 選擇失敗: {e}")
+            chosen = tools.selTournament(sorted_elite, k, tournsize=self.tournament_size)
+        
+        # Restore original fitness
+        for ind, original_fitness in zip(sorted_elite, original_fitnesses):
+            ind.fitness.values = original_fitness
+        
+        return chosen
+    
+    def _fallback_select_pairs(self, population: List, k: int) -> List[Tuple]:
+        """Fallback: standard tournament selection"""
+        logger.warning("使用回退方案選擇 parent pairs")
+        selected = tools.selTournament(population, k * 2, tournsize=self.tournament_size)
+        pairs = []
+        for i in range(0, len(selected), 2):
+            if i + 1 < len(selected):
+                pairs.append((selected[i], selected[i + 1]))
+        return pairs
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get strategy statistics"""
+        return {
+            'name': self.name,
+            'max_k': self.max_k,
+            'optimal_k': self._optimal_k,
+            'top_m_per_cluster': self.M,
+            'cross_group_ratio': self.cross_group_ratio,
+            'tournament_size': self.tournament_size,
+            'lambda_decay': self.lambda_decay,
+            'cached_generation': self._cached_generation,
+            'elite_pool_size': len(self._cached_elite_pool) if self._cached_elite_pool else 0
+        }
+
