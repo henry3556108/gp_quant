@@ -91,8 +91,16 @@ def _evaluate_rolling_window_worker(individual_data: tuple, engine_config: Dict[
                 df = pd.read_csv(csv_path, parse_dates=['Date'])
                 df.set_index('Date', inplace=True)
                 
+                # Convert window dates to Timestamps for proper slicing
+                data_start = pd.Timestamp(window['data_start'])
+                backtest_end = pd.Timestamp(window['backtest_end'])
+                
+                # Clamp to actual data range to avoid KeyError
+                actual_start = max(data_start, df.index.min())
+                actual_end = min(backtest_end, df.index.max())
+                
                 # Filter to window period (including warmup)
-                df = df.loc[window['data_start']:window['backtest_end']]
+                df = df.loc[actual_start:actual_end]
                 data[ticker] = df
             
             # Create backtest engine for this window
@@ -302,8 +310,16 @@ class RollingWindowFitnessEvaluator(PortfolioFitnessEvaluator):
                         else:
                             df = ticker_data
                         
+                        # Convert window dates to Timestamps for proper slicing
+                        data_start = pd.Timestamp(window['data_start'])
+                        backtest_end = pd.Timestamp(window['backtest_end'])
+                        
+                        # Clamp to actual data range to avoid KeyError
+                        actual_start = max(data_start, df.index.min())
+                        actual_end = min(backtest_end, df.index.max())
+                        
                         # Filter to window
-                        df_window = df.loc[window['data_start']:window['backtest_end']]
+                        df_window = df.loc[actual_start:actual_end]
                         window_data[ticker] = df_window
                     
                     # Create engine for this window

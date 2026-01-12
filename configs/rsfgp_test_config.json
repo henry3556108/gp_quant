@@ -1,0 +1,70 @@
+{
+    "experiment": {
+        "name": "RSFGP Test",
+        "description": "Test run for RSFGP evaluator"
+    },
+    "data": {
+        "mode": "portfolio",
+        "tickers_dir": "history",
+        "train_data_start": "2005-01-01",
+        "train_backtest_start": "2008-06-25",
+        "train_backtest_end": "2019-12-31",
+        "test_data_start": "2019-06-01",
+        "test_backtest_start": "2020-06-30",
+        "test_backtest_end": "2024-12-30"
+    },
+    "evolution": {
+        "population_size": 500,
+        "generations": 10,
+        "maximum_depth": 5,
+        "initial_depth": 2,
+        "max_processors": 2
+    },
+    "initialization": {
+        "method": "ramped_half_and_half",
+        "parameters": {
+            "min_depth": 2,
+            "max_depth": 5
+        }
+    },
+    "selection": {
+        "method": "tournament",
+        "parameters": {
+            "tournament_size": 3
+        }
+    },
+    "crossover": {
+        "strategy": "one_point",
+        "rate": 0.8
+    },
+    "mutation": {
+        "strategy": "point",
+        "rate": 0.1
+    },
+    "replacement": {
+        "method": "elitist",
+        "parameters": {
+            "elite_size": 2
+        }
+    },
+    "fitness": {
+        "evaluator": "rsfgp",
+        "function": "sterling_ratio",
+        "parameters": {
+            "n_segments": 5,
+            "segment_length": 500,
+            "penalty_value": -9.99
+        }
+    },
+    "logging": {
+        "records_dir": "/Volumes/X9 Pro/gp_quant_experiments/rsfgp_sterling_ratio",
+        "save_populations": true,
+        "save_genealogy": true
+    },
+    "termination": {
+        "early_stopping": false,
+        "parameters": {
+            "patience": 10
+        }
+    }
+}

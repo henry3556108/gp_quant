@@ -1,0 +1,87 @@
+{
+  "experiment": {
+    "name": "Tree Kernel Niche Test",
+    "description": "Small-scale test of TreeKernelNicheSelectionStrategy (pop=200, gen=10)",
+    "type": "standard"
+  },
+  "data": {
+    "mode": "portfolio",
+    "tickers_dir": "history",
+    "train_data_start": "2015-01-01",
+    "train_backtest_start": "2016-01-01", 
+    "train_backtest_end": "2019-12-31",
+    "test_data_start": "2019-01-01",
+    "test_backtest_start": "2020-01-01",
+    "test_backtest_end": "2021-12-31"
+  },
+  "evolution": {
+    "population_size": 200,
+    "generations": 10,
+    "maximum_depth": 7,
+    "initial_depth": 6,
+    "max_processors": 6
+  },
+  "initialization": {
+    "method": "ramped_half_and_half",
+    "parameters": {
+      "min_depth": 2,
+      "max_depth": 6
+    }
+  },
+  "selection": {
+    "method": "tree_kernel_niche",
+    "parameters": {
+      "max_k": 5,
+      "top_m_per_cluster": 50,
+      "cross_group_ratio": 0.3,
+      "tournament_size": 3,
+      "lambda_decay": 0.5
+    }
+  },
+  "crossover": {
+    "rate": 0.8,
+    "strategy": "one_point_leaf_biased",
+    "parameters": {}
+  },
+  "mutation": {
+    "rate": 0.2,
+    "strategy": "uniform",
+    "parameters": {}
+  },
+  "replacement": {
+    "method": "elitist",
+    "parameters": {
+      "elite_size": 10
+    }
+  },
+  "reproduction": {
+    "method": "niche_elitist",
+    "rate": 0.2,
+    "parameters": {
+      "min_elite_per_niche": 1
+    }
+  },
+  "fitness": {
+    "function": "sharpe_ratio",
+    "evaluator": "rsfgp",
+    "parameters": {
+      "n_segments": 3,
+      "aggregation_method": "soft_min",
+      "soft_min_temperature": 0.5,
+      "cache_pnl_curves": true
+    }
+  },
+  "termination": {
+    "early_stopping": true,
+    "parameters": {
+      "patience": 5,
+      "min_improvement": 0.001
+    }
+  },
+  "logging": {
+    "records_dir": "test_tree_kernel_niche",
+    "save_populations": true,
+    "save_genealogy": true,
+    "parameters": {}
+  }
+}
