@@ -44,9 +44,9 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
+# *.py,cover
 .hypothesis/
-.pytest_cache/
+# .pytest_cache/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -144,7 +144,8 @@ test_evolution_*
 # Project Specific - Experiment Results
 # ============================================================================
 
-# Experiment output files (可以選擇性保留部分結果)
+# Experiment output files
+experiments/
 experiments_results/
 portfolio_experiment_results/
 all_experiments_results.csv
@@ -171,16 +172,21 @@ best_individual_*.pkl
 # Trade details
 trade_details_*.csv
 
+# Temporary test directories
+test_knn_niching/
+test_knn_niching_large/
+test_tree_kernel_niche/
+rolling_window_tree_kernel_niche/
+test_signals/
+
 # ============================================================================
-# Project Specific - Data Files (根據需求調整)
+# Project Specific - Data Files
 # ============================================================================
 
-# 如果數據文件很大或包含敏感信息，取消註釋以下行
-# TSE300_selected/*.csv
-
-# 如果要保留原始數據但忽略處理後的數據
-# processed_data/
-# cleaned_data/
+# Data folders
+data/
+multi_market_data/
+history/
 
 # ============================================================================
 # Project Specific - Temporary Files
@@ -190,6 +196,9 @@ trade_details_*.csv
 temp/
 tmp/
 scratch/
+outputs/
+analysis/
+archive/
 
 # Backup files
 *.bak
@@ -202,49 +211,11 @@ scratch/
 logs/
 
 # ============================================================================
-# Documentation (可選)
+# Documentation (Optional)
 # ============================================================================
 
-# Ignore all markdown files except specific ones
-*.md
-*.txt
-# *.csv
-
-# But keep these important documentation files
-!README.md
-!PRD.md
-!DEAP_implementation_guide.md
-# !RUN_ALL_EXPERIMENTS_EXPLAINED.md
-# !MODIFY_MAIN_PY_EVALUATION.md
-
-# 如果使用 LaTeX 生成 PDF
-# *.aux
-# *.out
-# *.toc
-# *.pdf
-
-# ============================================================================
-# Data Analysis / Visualization
-# ============================================================================
-
-# Plots and figures (如果是自動生成的)
-plots/
-figures/
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.svg
-*.sh
-
-# 但保留文檔中的圖片
-!docs/**/*.png
-!docs/**/*.jpg
-!README_assets/*.png
-
-# Excel files (如果是臨時分析文件)
-*.xlsx
-*.xls
+# Keep docs
+!docs/
 
 # ============================================================================
 # Machine Learning / AI Specific
@@ -256,56 +227,17 @@ checkpoints/
 *.h5
 *.pth
 *.pt
-
+*.sh
 # TensorBoard logs
 runs/
 tensorboard/
 
 # Weights & Biases
 wandb/
-archive/
-analysis/
-configs/
+
 # ============================================================================
-# Keep These Files (明確保留)
+# Keep These Files (Explicitly)
 # ============================================================================
 
-# 確保這些重要文件被追蹤
 !requirements.txt
-
-# Keep source code
-!gp_quant/**/*.py
-!tests/**/*.py
-!main.py
-!run_*.py
-!plot_*.py
-
-# Keep sample data (如果有小樣本用於測試)
-!samples/**/*
-
-# ============================================================================
-# Notes
-# ============================================================================
-
-# 使用建議：
-# 1. 實驗結果文件（CSV, JSON）通常不應提交，因為：
-#    - 文件很大
-#    - 可以重新生成
-#    - 會導致 repo 膨脹
-#
-# 2. 如果需要保留某些關鍵實驗結果，可以：
-#    - 創建 results_archive/ 資料夾
-#    - 選擇性地 git add -f 特定文件
-#    - 或使用 Git LFS 管理大文件
-#
-# 3. 數據文件（TSE300_selected/*.csv）的處理：
-#    - 如果是公開數據且不大，可以提交
-#    - 如果是私有數據或很大，應該忽略
-#    - 可以在 README 中說明如何獲取數據
-#
-# 4. 定期清理：
-#    git clean -fdx  # 刪除所有未追蹤的文件（小心使用！）
-
-scripts/*large_scale_records_*/
-
-*.DS_Store
+todo.md
