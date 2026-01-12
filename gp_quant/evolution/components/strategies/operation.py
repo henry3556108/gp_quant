@@ -186,6 +186,8 @@ class SerialOperationStrategy(OperationStrategy):
             print(f"[DEBUG] 交配: num_offspring_needed={num_offspring_needed}, num_crossover_pairs={num_crossover}")
             
             try:
+                # Pass population for KNN Niching crossover
+                data['population'] = population
                 parent_pairs = self.engine.strategies['selection'].select_pairs(population, num_crossover, data)
                 logger.debug(f"選擇了 {len(parent_pairs) if parent_pairs else 0} 對父母")
                 if parent_pairs:

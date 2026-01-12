@@ -43,6 +43,99 @@ def load_config(config_path: str) -> Dict[str, Any]:
     print(f"✅ 配置載入成功: {config['experiment']['name']}")
     return config
 
+
+def load_explicit_data(train_csv: str, test_csv: str) -> Dict[str, Any]:
+    """
+    從明確指定的 CSV 檔案載入訓練和測試資料。
+    
+    用於多資產多 fold 實驗，直接使用 regime_splits 的 CSV 檔案。
+    
+    Args:
+        train_csv: 訓練資料 CSV 檔案路徑
+        test_csv: 測試資料 CSV 檔案路徑
+        
+    Returns:
+        資料字典，包含 train_data, test_data, tickers, date_metadata
+    """
+    import pandas as pd
+    
+    print(f"📊 載入明確指定的資料檔案...")
+    print(f"   Train: {train_csv}")
+    print(f"   Test: {test_csv}")
+    
+    train_path = Path(train_csv)
+    test_path = Path(test_csv)
+    
+    if not train_path.exists():
+        raise FileNotFoundError(f"訓練資料檔案不存在: {train_csv}")
+    if not test_path.exists():
+        raise FileNotFoundError(f"測試資料檔案不存在: {test_csv}")
+    
+    # 從檔名推斷 ticker 名稱
+    ticker = train_path.parent.name.upper()  # e.g., "btc_usd" -> "BTC_USD"
+    
+    # 載入訓練資料
+    train_df = pd.read_csv(train_path, parse_dates=['Date'], index_col='Date')
+    if hasattr(train_df.index, 'tz') and train_df.index.tz is not None:
+        train_df.index = train_df.index.tz_convert(None)
+    train_df.sort_index(inplace=True)
+    
+    # 載入測試資料
+    test_df = pd.read_csv(test_path, parse_dates=['Date'], index_col='Date')
+    if hasattr(test_df.index, 'tz') and test_df.index.tz is not None:
+        test_df.index = test_df.index.tz_convert(None)
+    test_df.sort_index(inplace=True)
+    
+    # 建立資料結構（與 split_train_test_data 相同格式）
+    train_start = train_df.index[0]
+    train_end = train_df.index[-1]
+    test_start = test_df.index[0]
+    test_end = test_df.index[-1]
+    
+    # 計算 warmup 期間（前 250 天用於技術指標計算）
+    warmup_days = min(250, len(train_df) // 4)
+    train_backtest_start = train_df.index[warmup_days]
+    test_backtest_start = test_df.index[min(warmup_days, len(test_df) // 4)]
+    
+    train_data = {
+        ticker: {
+            'data': train_df,
+            'backtest_start': str(train_backtest_start.date()),
+            'backtest_end': str(train_end.date()),
+        }
+    }
+    
+    test_data = {
+        ticker: {
+            'data': test_df,
+            'backtest_start': str(test_backtest_start.date()),
+            'backtest_end': str(test_end.date()),
+        }
+    }
+    
+    # 日期元資料 (用於更新 config)
+    date_metadata = {
+        'train_data_start': str(train_start.date()),
+        'train_backtest_start': str(train_backtest_start.date()),
+        'train_backtest_end': str(train_end.date()),
+        'test_data_start': str(test_start.date()),
+        'test_backtest_start': str(test_backtest_start.date()),
+        'test_backtest_end': str(test_end.date()),
+    }
+    
+    print(f"   Ticker: {ticker}")
+    print(f"   Train: {len(train_df)} days ({train_start.date()} ~ {train_end.date()})")
+    print(f"   Train backtest: {train_backtest_start.date()} ~ {train_end.date()}")
+    print(f"   Test: {len(test_df)} days ({test_start.date()} ~ {test_end.date()})")
+    print(f"✅ 資料載入完成")
+    
+    return {
+        'train_data': train_data,
+        'test_data': test_data,
+        'tickers': [ticker],
+        'date_metadata': date_metadata,
+    }
+
 def load_portfolio_data(data_config: Dict[str, Any]) -> Dict[str, Any]:
     """
     載入投資組合數據
@@ -167,6 +260,11 @@ def main():
     parser.add_argument('--verbose', '-v', action='store_true', help='詳細輸出模式')
     parser.add_argument('--no-timestamp', action='store_true', help='不添加時間流水號到記錄目錄')
     
+    # New arguments for explicit data paths
+    parser.add_argument('--train-data', type=str, help='明確指定訓練資料 CSV 檔案路徑')
+    parser.add_argument('--test-data', type=str, help='明確指定測試資料 CSV 檔案路徑')
+    parser.add_argument('--output-dir', type=str, help='覆蓋輸出目錄 (logging.records_dir)')
+    
     args = parser.parse_args()
     
     try:
@@ -184,6 +282,11 @@ def main():
             print(f"   ├─ 演化世代: {config['evolution']['generations']}")
             print(f"   └─ 記錄目錄: {config['logging']['records_dir']}")
         
+        # 2.1 覆蓋輸出目錄 (--output-dir)
+        if args.output_dir:
+            config['logging']['records_dir'] = args.output_dir
+            print(f"📁 使用指定輸出目錄: {args.output_dir}")
+        
         # 2.5. 添加時間流水號到記錄目錄
         if not args.no_timestamp:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M')
@@ -200,7 +303,40 @@ def main():
         print(f"📁 記錄目錄已創建: {records_dir}")
         
         # 5. 載入數據
-        data = load_portfolio_data(config['data'])
+        if args.train_data and args.test_data:
+            # 使用明確指定的 CSV 檔案
+            data = load_explicit_data(args.train_data, args.test_data)
+            
+            # 更新 config 的日期設定 (用於 Rolling Window Evaluator)
+            date_meta = data['date_metadata']
+            config['data']['train_data_start'] = date_meta['train_data_start']
+            config['data']['train_backtest_start'] = date_meta['train_backtest_start']
+            config['data']['train_backtest_end'] = date_meta['train_backtest_end']
+            config['data']['test_data_start'] = date_meta['test_data_start']
+            config['data']['test_backtest_start'] = date_meta['test_backtest_start']
+            config['data']['test_backtest_end'] = date_meta['test_backtest_end']
+            print(f"📅 已更新 config 日期: train {date_meta['train_backtest_start']} ~ {date_meta['train_backtest_end']}")
+            
+            # 為 parallel worker 建立 symlink (讓 tickers_dir 能找到資料)
+            import os
+            import tempfile
+            ticker = data['tickers'][0]
+            train_path = Path(args.train_data).resolve()
+            
+            # 建立臨時目錄並 symlink 訓練資料
+            temp_tickers_dir = Path(tempfile.mkdtemp(prefix="gp_quant_tickers_"))
+            symlink_path = temp_tickers_dir / f"{ticker}.csv"
+            symlink_path.symlink_to(train_path)
+            
+            # 更新 config 的 tickers_dir
+            config['data']['tickers_dir'] = str(temp_tickers_dir)
+            print(f"🔗 建立 symlink: {symlink_path} -> {train_path}")
+            print(f"   Parallel mode enabled with tickers_dir: {temp_tickers_dir}")
+        elif args.train_data or args.test_data:
+            raise ValueError("必須同時指定 --train-data 和 --test-data")
+        else:
+            # 使用傳統的資料夾載入方式
+            data = load_portfolio_data(config['data'])
         
         # 6. 選擇並創建引擎
         experiment_type = config['experiment'].get('type', 'standard')

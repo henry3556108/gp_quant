@@ -45,7 +45,8 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
         'crossover': {
             'one_point_leaf_biased': 'CrossoverStrategy',
             'one_point': 'OnePointCrossoverStrategy',
-            'uniform': 'UniformCrossoverStrategy'
+            'uniform': 'UniformCrossoverStrategy',
+            'knn_niching': 'KNNNichingCrossoverStrategy'
         },
         'mutation': {
             'uniform': 'MutationStrategy',

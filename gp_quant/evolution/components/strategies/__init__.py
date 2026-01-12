@@ -33,7 +33,7 @@ __all__ = [
     'TEDNicheSelectionStrategy', 'PnLNicheSelectionStrategy', 'SignalNicheSelectionStrategy',
     'TreeKernelNicheSelectionStrategy',
     # 交配策略
-    'CrossoverStrategy', 'OnePointCrossoverStrategy', 'UniformCrossoverStrategy',
+    'CrossoverStrategy', 'OnePointCrossoverStrategy', 'UniformCrossoverStrategy', 'KNNNichingCrossoverStrategy',
     # 變異策略
     'MutationStrategy', 'PointMutationStrategy', 'SubtreeMutationStrategy',
     # 替換策略
