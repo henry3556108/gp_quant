@@ -215,7 +215,8 @@ class PortfolioBacktestingEngine:
             'metrics': metrics,
             'per_stock_pnl': per_stock_pnl,
             'transactions': self.rebalancer.get_transaction_history(),
-            'allocation_summary': self.rebalancer.get_allocation_summary()
+            'allocation_summary': self.rebalancer.get_allocation_summary(),
+            'signals': signals
         }
     
     def _generate_signals_for_all_stocks(self, individual: Any) -> Dict[str, Dict]:
@@ -466,3 +467,29 @@ class PortfolioBacktestingEngine:
         equity_curve = result['equity_curve']
         pnl_curve = equity_curve - self.initial_capital
         return pnl_curve
+    
+    def get_signals(self, individual: Any) -> np.ndarray:
+        """
+        Get trading signals for an individual as a flat boolean array.
+        
+        Generates signals for all tickers and concatenates them into
+        a single array for comparison purposes.
+        
+        Args:
+            individual: DEAP individual
+            
+        Returns:
+            np.ndarray: Boolean array of shape (n_tickers * n_dates,)
+        """
+        signals_dict = self._generate_signals_for_all_stocks(individual)
+        
+        # Flatten signals from all tickers into a single array
+        all_signals = []
+        for ticker in sorted(self.tickers):  # Sort for consistent ordering
+            ticker_signals = signals_dict.get(ticker, {})
+            for date in self.common_dates:
+                signal = ticker_signals.get(date, 0)
+                all_signals.append(bool(signal))
+        
+        return np.array(all_signals, dtype=bool)
+

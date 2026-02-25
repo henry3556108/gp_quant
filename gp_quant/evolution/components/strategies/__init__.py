@@ -37,7 +37,7 @@ __all__ = [
     # 變異策略
     'MutationStrategy', 'PointMutationStrategy', 'SubtreeMutationStrategy',
     # 替換策略
-    'ReplacementStrategy', 'GenerationalReplacementStrategy', 'SteadyStateStrategy', 'ElitistStrategy', 'TournamentReplacementStrategy',
+    'ReplacementStrategy', 'GenerationalReplacementStrategy', 'SteadyStateStrategy', 'ElitistStrategy', 'TournamentReplacementStrategy', 'DeterministicCrowdingReplacementStrategy',
     # 操作策略
     'OperationStrategy', 'ParallelOperationStrategy', 'SerialOperationStrategy'
 ]
