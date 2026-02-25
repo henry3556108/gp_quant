@@ -57,7 +57,8 @@ def _create_strategy(strategy_type: str, strategy_name: str, strategies_module, 
             'generational': 'GenerationalReplacementStrategy',
             'steady_state': 'SteadyStateStrategy',
             'elitist': 'ElitistStrategy',
-            'tournament': 'TournamentReplacementStrategy'
+            'tournament': 'TournamentReplacementStrategy',
+            'deterministic_crowding': 'DeterministicCrowdingReplacementStrategy'
         },
         'operation': {
             'parallel': 'ParallelOperationStrategy',

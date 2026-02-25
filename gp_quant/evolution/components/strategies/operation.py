@@ -210,12 +210,13 @@ class SerialOperationStrategy(OperationStrategy):
         mutation_mode = config['mutation'].get('apply_to', 'offspring')
         
         print(f"[DEBUG] 變異: rate={mutation_rate}, mode={mutation_mode}, crossover_offspring={len(crossover_offspring)}")
-        
+
         if mutation_rate > 0:
             if mutation_mode == 'offspring' and crossover_offspring:
-                # 對交配子代進行變異 (不記錄父母資訊，因為已在交配時記錄)
+                # 對交配子代按機率逐個決定是否變異
                 mutation_offspring = self.engine.strategies['mutation'].mutate(
-                    crossover_offspring, data, record_parents=False
+                    crossover_offspring, data, record_parents=False,
+                    mutation_rate=mutation_rate
                 )
                 print(f"[DEBUG] 變異offspring模式產生: {len(mutation_offspring)} 個個體")
                 logger.debug(f"   對交配子代變異產生 {len(mutation_offspring)} 個個體")

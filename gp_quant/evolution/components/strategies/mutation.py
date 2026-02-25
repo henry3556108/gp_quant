@@ -41,57 +41,71 @@ class MutationStrategy(EvolutionStrategy):
             'failed_mutations': 0
         }
     
-    def mutate(self, individuals: List, data: Dict[str, Any], record_parents: bool = True) -> List:
+    def mutate(self, individuals: List, data: Dict[str, Any],
+               record_parents: bool = True, mutation_rate: float = 1.0) -> List:
         """
         執行變異操作
-        
+
         Args:
             individuals: 要變異的個體列表
             data: 演化數據
             record_parents: 是否記錄父母資訊 (默認 True)
-            
+            mutation_rate: 個體級別的變異機率 (0.0~1.0)，每個個體以此機率
+                          決定是否被 mutate，未被選中的保留原樣（僅 clone）。
+                          默認 1.0 = 全部 mutate（向後兼容）。
+
         Returns:
-            變異後的個體列表
+            處理後的個體列表（mutated + 未變異的 clone）
         """
-        mutated_individuals = []
-        
+        result_individuals = []
+        actually_mutated = 0
+        kept_original = 0
+
         for individual in individuals:
-            self.retry_stats['total_mutations'] += 1
-            
-            # 嘗試變異，帶重試邏輯
-            success = False
-            for attempt in range(self.max_retries):
-                # 複製個體
-                mutant = self._clone_individual(individual)
-                
-                # 執行變異操作
-                self._perform_mutation(mutant)
-                
-                # 檢查深度限制
-                if self._check_depth_constraint(mutant):
-                    # 清除適應度 (需要重新評估)
-                    self._invalidate_fitness(mutant)
-                    
-                    # 根據參數決定是否記錄父母資訊
-                    if record_parents:
-                        self._record_parents(mutant, [individual], operation='mutation')
-                        logger.debug(f"   變異個體記錄父母: {getattr(individual, 'id', id(individual))}")
-                    else:
-                        logger.debug(f"   變異個體不記錄父母 (串聯模式-交配子代)")
-                    
-                    mutated_individuals.append(mutant)
-                    self.retry_stats['successful_mutations'] += 1
-                    success = True
-                    break
-            
-            if not success:
-                # 重試失敗，生成新的隨機個體
-                logger.warning(f"變異重試 {self.max_retries} 次失敗，生成隨機個體")
-                mutant = self._generate_random_individual()
-                mutated_individuals.append(mutant)
-                self.retry_stats['failed_mutations'] += 1
-        
-        return mutated_individuals
+            # 按機率決定是否 mutate
+            if random.random() < mutation_rate:
+                # --- 執行 mutation ---
+                self.retry_stats['total_mutations'] += 1
+                success = False
+
+                for attempt in range(self.max_retries):
+                    mutant = self._clone_individual(individual)
+                    self._perform_mutation(mutant)
+
+                    if self._check_depth_constraint(mutant):
+                        self._invalidate_fitness(mutant)
+
+                        if record_parents:
+                            self._record_parents(mutant, [individual], operation='mutation')
+                        else:
+                            # 串聯模式：保留 crossover 記錄的 parents，但標記 operation
+                            if hasattr(mutant, 'operation'):
+                                mutant.operation = 'crossover+mutation'
+
+                        result_individuals.append(mutant)
+                        self.retry_stats['successful_mutations'] += 1
+                        actually_mutated += 1
+                        success = True
+                        break
+
+                if not success:
+                    logger.warning(f"變異重試 {self.max_retries} 次失敗，生成隨機個體")
+                    mutant = self._generate_random_individual()
+                    result_individuals.append(mutant)
+                    self.retry_stats['failed_mutations'] += 1
+                    actually_mutated += 1
+            else:
+                # --- 不 mutate，保留原始 crossover 結果（clone 以避免 reference 問題）---
+                clone = self._clone_individual(individual)
+                # 保留 crossover 時設定的 fitness invalidation 和 parents
+                self._invalidate_fitness(clone)
+                result_individuals.append(clone)
+                kept_original += 1
+
+        logger.info(f"變異統計: {actually_mutated} mutated, {kept_original} kept original "
+                    f"(rate={mutation_rate:.2f}, total={len(individuals)})")
+
+        return result_individuals
     
     def _perform_mutation(self, individual):
         """執行具體的變異操作"""

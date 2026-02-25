@@ -59,6 +59,18 @@ def soft_min_score(values: List[float], alpha: float = 1.0) -> float:
     return -log_penalty
 
 
+def _flatten_signals(signals_dict: Dict) -> np.ndarray:
+    """
+    Flatten {ticker: {date: 0/1}} to a single bool array for phenotype distance.
+
+    Tickers are sorted to ensure consistent ordering across individuals.
+    """
+    combined = []
+    for ticker in sorted(signals_dict.keys()):
+        combined.extend(signals_dict[ticker].values())
+    return np.array(combined, dtype=bool)
+
+
 def _evaluate_rolling_window_worker(individual_data: tuple, engine_config: Dict[str, Any],
                                      fitness_config: Dict[str, Any]) -> tuple:
     """
@@ -162,12 +174,35 @@ def _evaluate_rolling_window_worker(individual_data: tuple, engine_config: Dict[
         else:
             aggregated_fitness = np.mean(window_fitnesses)
         
-        return individual_id, aggregated_fitness, window_fitnesses
-        
+        # Generate signals on full training data for phenotype distance
+        flat_signals = None
+        try:
+            full_data = {}
+            for ticker in engine_config['tickers']:
+                csv_path = Path(tickers_dir) / f"{ticker}.csv"
+                df = pd.read_csv(csv_path, parse_dates=['Date'])
+                df.set_index('Date', inplace=True)
+                full_data[ticker] = df
+
+            full_engine = PortfolioBacktestingEngine(
+                data=full_data,
+                backtest_start=engine_config['backtest_start'],
+                backtest_end=engine_config['backtest_end'],
+                initial_capital=initial_capital,
+                pset=None
+            )
+            full_engine.pset = pset
+            full_signals = full_engine._generate_signals_for_all_stocks(individual_tree)
+            flat_signals = _flatten_signals(full_signals)
+        except Exception as e:
+            logger.debug(f"Signal caching failed in worker for {individual_id}: {e}")
+
+        return individual_id, aggregated_fitness, window_fitnesses, flat_signals
+
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return individual_data[0], -100000.0, []
+        return individual_data[0], -100000.0, [], None
 
 
 class RollingWindowFitnessEvaluator(PortfolioFitnessEvaluator):
@@ -373,10 +408,31 @@ class RollingWindowFitnessEvaluator(PortfolioFitnessEvaluator):
                 individual.fitness.values = (final_fitness,)
                 individual.add_metadata('window_fitnesses', window_fitnesses)
                 individual.add_metadata('aggregated_fitness', final_fitness)
-                
+
+                # Generate signals on full training data for phenotype distance
+                try:
+                    full_train_data = {}
+                    for ticker, ticker_data in data['train_data'].items():
+                        if isinstance(ticker_data, dict) and 'data' in ticker_data:
+                            full_train_data[ticker] = ticker_data['data']
+                        else:
+                            full_train_data[ticker] = ticker_data
+
+                    full_engine = PortfolioBacktestingEngine(
+                        data=full_train_data,
+                        backtest_start=self.engine_config['backtest_start'],
+                        backtest_end=self.engine_config['backtest_end'],
+                        initial_capital=100000.0,
+                        pset=pset
+                    )
+                    full_signals = full_engine._generate_signals_for_all_stocks(individual)
+                    individual.add_metadata('signals', _flatten_signals(full_signals))
+                except Exception as e:
+                    logger.debug(f"Signal caching failed for {individual.id}: {e}")
+
                 if self.cache_enabled:
                     self.fitness_cache[individual.id] = final_fitness
-                
+
             except Exception as e:
                 logger.error(f"Rolling Window: Error evaluating {individual.id}: {e}")
                 individual.fitness.values = (-100000.0,)
@@ -392,7 +448,9 @@ class RollingWindowFitnessEvaluator(PortfolioFitnessEvaluator):
                 'tickers_dir': self.engine.config['data']['tickers_dir'],
                 'initial_capital': 100000.0,
                 'windows': self.windows,
-                'tickers': tickers
+                'tickers': tickers,
+                'backtest_start': self.engine_config['backtest_start'],
+                'backtest_end': self.engine_config['backtest_end'],
             }
             
             fitness_config = {
@@ -422,27 +480,29 @@ class RollingWindowFitnessEvaluator(PortfolioFitnessEvaluator):
                 with tqdm(total=len(individuals), desc="Rolling Window Parallel", unit="ind") as pbar:
                     for future in as_completed(future_to_individual):
                         try:
-                            individual_id, aggregated_fitness, window_fitnesses = future.result()
-                            results[individual_id] = (aggregated_fitness, window_fitnesses)
-                            
+                            individual_id, aggregated_fitness, window_fitnesses, flat_signals = future.result()
+                            results[individual_id] = (aggregated_fitness, window_fitnesses, flat_signals)
+
                             if self.cache_enabled:
                                 self.fitness_cache[individual_id] = aggregated_fitness
-                            
+
                             pbar.update(1)
-                            
+
                         except Exception as e:
                             individual_id = future_to_individual[future]
                             logger.error(f"Rolling Window Parallel: Worker failed for {individual_id}: {e}")
-                            results[individual_id] = (-100000.0, [])
+                            results[individual_id] = (-100000.0, [], None)
                             pbar.update(1)
             
             # Assign fitness to individuals
             for individual in individuals:
                 if individual.id in results:
-                    aggregated_fitness, window_fitnesses = results[individual.id]
+                    aggregated_fitness, window_fitnesses, flat_signals = results[individual.id]
                     individual.fitness.values = (aggregated_fitness,)
                     individual.add_metadata('window_fitnesses', window_fitnesses)
                     individual.add_metadata('aggregated_fitness', aggregated_fitness)
+                    if flat_signals is not None:
+                        individual.add_metadata('signals', flat_signals)
                 else:
                     individual.fitness.values = (-100000.0,)
             

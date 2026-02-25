@@ -261,7 +261,7 @@ def deap_to_tree_node(individual) -> TreeNode:
     # 使用堆疊來構建樹
     stack = []
     
-    for node in individual:
+    for node in reversed(individual):
         if isinstance(node, gp.Primitive):
             # Primitive 節點：需要從堆疊中取出子節點
             children = []
