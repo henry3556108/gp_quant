@@ -1,9 +1,16 @@
-pandas>=1.3.0
-matplotlib>=3.4.0
-tqdm>=4.62.0
-numba>=0.55.0
+# Core dependencies
 deap>=1.3.0
 numpy>=1.21.0
+pandas>=1.3.0
+numba>=0.55.0
 scikit-learn>=1.0.0
-seaborn>=0.11.0
 scipy>=1.7.0
+tqdm>=4.62.0
+joblib>=1.0.0
+
+# Visualization
+matplotlib>=3.4.0
+seaborn>=0.11.0
+
+# Serialization (for loading saved experiments)
+dill>=0.3.0
